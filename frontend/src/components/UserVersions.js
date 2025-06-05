@@ -1,0 +1,712 @@
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import { useParams, useNavigate } from 'react-router-dom';
+import {
+    Container,
+    Paper,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
+    Typography,
+    IconButton,
+    Box,
+    AppBar,
+    Toolbar,
+    Tab,
+    Tabs,
+    Grid,
+    styled
+} from '@mui/material';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import {
+    LineChart,
+    Line,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+    Legend,
+    ResponsiveContainer
+} from 'recharts';
+
+// Styled components
+const StyledTableCell = styled(TableCell)(({ theme }) => ({
+    padding: '20px 24px',  // Increased padding
+    fontSize: '1rem',
+    '&.MuiTableCell-head': {
+        backgroundColor: theme.palette.primary.main,
+        color: theme.palette.common.white,
+        fontWeight: 'bold',
+        whiteSpace: 'nowrap',
+        fontSize: '1.1rem'  // Slightly larger header text
+    },
+    width: 'auto',  // Allow cells to take necessary width
+    textAlign: 'left'  // Default alignment
+}));
+
+const StyledTableRow = styled(TableRow)(({ theme }) => ({
+    '&:nth-of-type(odd)': {
+        backgroundColor: theme.palette.action.hover,
+    },
+    '&:hover': {
+        backgroundColor: theme.palette.action.selected,
+    },
+    '& > td': {
+        borderBottom: `1px solid ${theme.palette.divider}`,
+    }
+}));
+
+const UserVersions = () => {
+    const [versions, setVersions] = useState([]);
+    const [dataVersions, setDataVersions] = useState([]);
+    const [userDeviceInfo, setUserDeviceInfo] = useState(null);
+    const [sensorData, setSensorData] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [currentTab, setCurrentTab] = useState(0);
+    const { username, versionId } = useParams();
+    const navigate = useNavigate();
+
+    useEffect(() => {
+        const fetchData = async () => {
+            try {
+                const token = localStorage.getItem('token');
+                if (!token) {
+                    navigate('/');
+                    return;
+                }
+
+                // If we have a versionId, fetch that specific version's data
+                if (versionId) {
+                    console.log('Fetching specific version data for versionId:', versionId);
+                    try {
+                        const versionDataResponse = await axios.get(`http://localhost:3000/version-data/${versionId}`, {
+                            headers: { 'Authorization': `Bearer ${token}` }
+                        });
+                        console.log('Version data response:', versionDataResponse.data);
+                        setSensorData(versionDataResponse.data);
+                        setLoading(false);
+                        return;
+                    } catch (error) {
+                        console.error('Failed to fetch version data:', error.response?.data || error.message);
+                        setError('Failed to fetch version data: ' + (error.response?.data?.error || error.message));
+                        setLoading(false);
+                        return;
+                    }
+                }
+
+                // Fetch user device info first
+                const deviceInfoResponse = await axios.get(`http://localhost:3000/user-device-info/${username}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                setUserDeviceInfo(deviceInfoResponse.data);
+
+                // Fetch versions and sensor data in parallel
+                const promises = [
+                    axios.get(`http://localhost:3000/user-versions/${username}`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    }).catch(err => {
+                        console.warn('No versions found for user:', err.response?.data?.error);
+                        return { data: [] };
+                    })
+                ];
+
+                // Fetch sensor data and data versions
+                if (deviceInfoResponse.data.etag) {
+                    promises.push(
+                        axios.get(`http://localhost:3000/user-sensor-data/${deviceInfoResponse.data.etag}`, {
+                            headers: { 'Authorization': `Bearer ${token}` }
+                        }).catch(err => {
+                            console.warn('No sensor data found for etag:', err.response?.data?.error);
+                            return { data: null };
+                        })
+                    );
+                }
+                
+                // Fetch data versions using the patient_id from device info
+                // Look for patient_id in the device info or use a derived value
+                let patientId = username; // fallback to username
+                if (deviceInfoResponse.data._id) {
+                    // Extract the base filename from the _id (e.g., "visualization-test-bucket-private/Test_output.txt" -> "Test_output")
+                    const fileId = deviceInfoResponse.data._id;
+                    const fileName = fileId.split('/').pop(); // Get the filename
+                    patientId = fileName.replace(/\.(txt|csv|json)$/i, ''); // Remove common file extensions
+                }
+                
+                console.log(`Fetching data versions for patient_id: ${patientId} (derived from file: ${deviceInfoResponse.data._id})`);
+                promises.push(
+                    axios.get(`http://localhost:3000/data-versions/${patientId}`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    }).then(response => {
+                        console.log('Data versions API success:', response.data);
+                        return response;
+                    }).catch(err => {
+                        console.error('Data versions API error:', err.response?.data || err.message);
+                        return { data: [] };
+                    })
+                );
+
+                const responses = await Promise.all(promises);
+                const versionsResponse = responses[0];
+                let sensorDataResponse = null;
+                let dataVersionsResponse = null;
+                
+                if (deviceInfoResponse.data.etag) {
+                    sensorDataResponse = responses[1];
+                    dataVersionsResponse = responses[2];
+                } else {
+                    dataVersionsResponse = responses[1];
+                }
+
+                // Sort versions by version number in ascending order
+                const sortedVersions = versionsResponse.data.sort((a, b) => {
+                    const versionA = parseInt(a.version_number) || 0;
+                    const versionB = parseInt(b.version_number) || 0;
+                    return versionA - versionB;
+                });
+                setVersions(sortedVersions);
+
+                // Set sensor data if available
+                if (sensorDataResponse && sensorDataResponse.data) {
+                    setSensorData(sensorDataResponse.data);
+                }
+
+                // Set data versions if available
+                console.log('Data versions response:', dataVersionsResponse);
+                if (dataVersionsResponse && dataVersionsResponse.data) {
+                    console.log('Setting data versions:', dataVersionsResponse.data);
+                    setDataVersions(dataVersionsResponse.data);
+                } else {
+                    console.log('No data versions found or invalid response');
+                }
+                setLoading(false);
+            } catch (err) {
+                setError(err.response?.data?.error || 'Failed to fetch user data');
+                setLoading(false);
+            }
+        };
+
+        fetchData();
+    }, [username, versionId, navigate]);
+
+    const formatDate = (dateValue) => {
+        if (!dateValue) return 'N/A';
+        
+        if (typeof dateValue === 'string') {
+            return new Date(dateValue).toLocaleString();
+        }
+        
+        if (dateValue.$date) {
+            if (dateValue.$date.$numberLong) {
+                return new Date(parseInt(dateValue.$date.$numberLong)).toLocaleString();
+            }
+            return new Date(dateValue.$date).toLocaleString();
+        }
+        
+        return new Date(dateValue).toLocaleString();
+    };
+
+    const handleBack = () => {
+        if (versionId) {
+            // If viewing a specific version, go back to the user versions page
+            navigate(`/user-versions/${username}`);
+        } else {
+            // If viewing user versions, go back to the main dashboard
+            navigate('/');
+        }
+    };
+
+    const handleTabChange = (event, newValue) => {
+        setCurrentTab(newValue);
+    };
+
+    const prepareGraphData = () => {
+        if (!versions || versions.length === 0) return [];
+        return versions.map(version => ({
+            date: formatDate(version.versioned_at),
+            hr: parseInt(version.data_snapshot.vitals.hr),
+            temp: parseFloat(version.data_snapshot.vitals.temp),
+            bp_systolic: parseInt(version.data_snapshot.vitals.bp.split('/')[0]),
+            bp_diastolic: parseInt(version.data_snapshot.vitals.bp.split('/')[1]),
+            o2: parseInt(version.data_snapshot.vitals.o2),
+            resp: parseInt(version.data_snapshot.vitals.resp),
+            weight: parseInt(version.data_snapshot.vitals.weight)
+        }));  // Removed .reverse() to maintain the ascending order
+    };
+
+    const prepareSensorGraphData = () => {
+        // Handle both current sensor data and version data formats
+        let dataPoints;
+        if (versionId && sensorData?.data_snapshot?.data_points) {
+            // Version data format
+            dataPoints = sensorData.data_snapshot.data_points;
+        } else if (sensorData?.data?.data_points) {
+            // Current sensor data format
+            dataPoints = sensorData.data.data_points;
+        } else {
+            return [];
+        }
+        
+        // Debug: Log the first data point to understand the structure
+        if (dataPoints.length > 0) {
+            console.log('First sensor data point:', dataPoints[0]);
+        }
+        
+        return dataPoints.map((point, index) => {
+            let timestamp;
+            let timeString;
+            
+            try {
+                // Handle different timestamp formats
+                if (point.timestamp?.$date?.$numberLong) {
+                    timestamp = parseInt(point.timestamp.$date.$numberLong);
+                } else if (point.timestamp?.$date) {
+                    timestamp = new Date(point.timestamp.$date).getTime();
+                } else if (point.timestamp) {
+                    timestamp = new Date(point.timestamp).getTime();
+                } else if (point.time) {
+                    // Use time field if timestamp is not available
+                    const timeValue = point.time?.$numberInt || point.time;
+                    timestamp = parseInt(timeValue) * 1000; // Convert seconds to milliseconds
+                } else {
+                    timestamp = Date.now() + (index * 1000); // Fallback with incremental time
+                }
+                
+                timeString = new Date(timestamp).toLocaleTimeString();
+            } catch (error) {
+                console.warn('Error parsing timestamp for point:', point, error);
+                timestamp = Date.now() + (index * 1000);
+                timeString = `Point ${index + 1}`;
+            }
+            
+            return {
+                time: timeString,
+                timestamp: timestamp,
+                cortisol1: point['Cortisol(ng/mL)']?.$numberDouble || point['Cortisol(ng/mL)'] || null,
+                glucose1: point['Glucose(mg/dL)']?.$numberDouble || point['Glucose(mg/dL)'] || null,
+                cortisol2: point['Cortisol(ng/mL)_2']?.$numberDouble || point['Cortisol(ng/mL)_2'] || null,
+                glucose2: point['Glucose(mg/dL)_2']?.$numberDouble || point['Glucose(mg/dL)_2'] || null
+            };
+        }).sort((a, b) => a.timestamp - b.timestamp);
+    };
+
+    if (loading) return (
+        <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
+            <Typography>Loading...</Typography>
+        </Box>
+    );
+
+    if (error) return (
+        <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
+            <Typography color="error">{error}</Typography>
+        </Box>
+    );
+
+    const graphData = prepareGraphData();
+    const sensorGraphData = prepareSensorGraphData();
+
+    return (
+        <Container maxWidth={false} sx={{ mb: 4, px: 4 }}>
+            <AppBar position="static" color="default" elevation={0}>
+                <Toolbar>
+                    <IconButton edge="start" onClick={handleBack}>
+                        <ArrowBackIcon />
+                    </IconButton>
+                    <Typography variant="h6" sx={{ ml: 2 }}>
+                        {versionId ? `Version Data - ${username}` : `Patient Data Versions - ${username}`}
+                    </Typography>
+                </Toolbar>
+            </AppBar>
+
+            <Box sx={{ mt: 3 }}>
+                <Tabs 
+                    value={currentTab} 
+                    onChange={handleTabChange}
+                    sx={{
+                        borderBottom: 1,
+                        borderColor: 'divider',
+                        mb: 3
+                    }}
+                >
+                    <Tab label="Device Info" />
+                    {!versionId && <Tab label="Data Table" />}
+                    <Tab label="Sensor Data" />
+                </Tabs>
+
+                <Box sx={{ mt: 3 }}>
+                    {currentTab === 0 ? (
+                        // Device Info Tab
+                        <Container maxWidth="md">
+                            <Paper sx={{ p: 4, mt: 2 }}>
+                                <Typography variant="h4" gutterBottom align="center" color="primary">
+                                    User Device Information
+                                </Typography>
+                                {(versionId && sensorData?.data_snapshot?.device_info) || userDeviceInfo ? (
+                                    <Grid container spacing={3} sx={{ mt: 2 }}>
+                                        <Grid item xs={12} md={6}>
+                                            <Paper sx={{ p: 3, bgcolor: 'background.default' }}>
+                                                <Typography variant="h6" gutterBottom color="primary">
+                                                    User Details
+                                                </Typography>
+                                                <Box sx={{ '& > div': { mb: 2 } }}>
+                                                    {(() => {
+                                                        const deviceInfo = versionId ? sensorData?.data_snapshot?.device_info : userDeviceInfo?.device_info;
+                                                        const displayUsername = versionId ? username : userDeviceInfo?.username;
+                                                        return (
+                                                            <>
+                                                                <Box display="flex" justifyContent="space-between">
+                                                                    <Typography variant="body1"><strong>Username:</strong></Typography>
+                                                                    <Typography variant="body1">{displayUsername}</Typography>
+                                                                </Box>
+                                                                <Box display="flex" justifyContent="space-between">
+                                                                    <Typography variant="body1"><strong>User ID:</strong></Typography>
+                                                                    <Typography variant="body1">{deviceInfo?.userID}</Typography>
+                                                                </Box>
+                                                                <Box display="flex" justifyContent="space-between">
+                                                                    <Typography variant="body1"><strong>Gender:</strong></Typography>
+                                                                    <Typography variant="body1">{deviceInfo?.gender}</Typography>
+                                                                </Box>
+                                                                <Box display="flex" justifyContent="space-between">
+                                                                    <Typography variant="body1"><strong>Age:</strong></Typography>
+                                                                    <Typography variant="body1">{deviceInfo?.age?.$numberInt || deviceInfo?.age}</Typography>
+                                                                </Box>
+                                                                <Box display="flex" justifyContent="space-between">
+                                                                    <Typography variant="body1"><strong>Arm:</strong></Typography>
+                                                                    <Typography variant="body1">{deviceInfo?.arm}</Typography>
+                                                                </Box>
+                                                            </>
+                                                        );
+                                                    })()}
+                                                </Box>
+                                            </Paper>
+                                        </Grid>
+                                        <Grid item xs={12} md={6}>
+                                            <Paper sx={{ p: 3, bgcolor: 'background.default' }}>
+                                                <Typography variant="h6" gutterBottom color="primary">
+                                                    Device & Technical Details
+                                                </Typography>
+                                                <Box sx={{ '& > div': { mb: 2 } }}>
+                                                    {(() => {
+                                                        const deviceInfo = versionId ? sensorData?.data_snapshot?.device_info : userDeviceInfo?.device_info;
+                                                        const currentData = versionId ? sensorData : userDeviceInfo;
+                                                        return (
+                                                            <>
+                                                                <Box display="flex" justifyContent="space-between">
+                                                                    <Typography variant="body1"><strong>Device ID:</strong></Typography>
+                                                                    <Typography variant="body1">{deviceInfo?.deviceID}</Typography>
+                                                                </Box>
+                                                                <Box display="flex" justifyContent="space-between">
+                                                                    <Typography variant="body1"><strong>Sensor Combination:</strong></Typography>
+                                                                    <Typography variant="body1">{deviceInfo?.sensorCombination}</Typography>
+                                                                </Box>
+                                                                <Box display="flex" justifyContent="space-between">
+                                                                    <Typography variant="body1"><strong>Epoch:</strong></Typography>
+                                                                    <Typography variant="body1">{deviceInfo?.epoch}</Typography>
+                                                                </Box>
+                                                                {!versionId && (
+                                                                    <>
+                                                                        <Box display="flex" justifyContent="space-between">
+                                                                            <Typography variant="body1"><strong>ETag:</strong></Typography>
+                                                                            <Typography variant="body1" sx={{ fontSize: '0.9rem', wordBreak: 'break-all' }}>{currentData?.etag}</Typography>
+                                                                        </Box>
+                                                                        <Box display="flex" justifyContent="space-between">
+                                                                            <Typography variant="body1"><strong>Last Modified:</strong></Typography>
+                                                                            <Typography variant="body1">{formatDate(currentData?.last_modified)}</Typography>
+                                                                        </Box>
+                                                                        {currentData?.processed_at && (
+                                                                            <Box display="flex" justifyContent="space-between">
+                                                                                <Typography variant="body1"><strong>Processed At:</strong></Typography>
+                                                                                <Typography variant="body1">{formatDate(currentData.processed_at.$date?.$numberLong ? new Date(parseInt(currentData.processed_at.$date.$numberLong)) : currentData.processed_at)}</Typography>
+                                                                            </Box>
+                                                                        )}
+                                                                    </>
+                                                                )}
+                                                                {versionId && (
+                                                                    <>
+                                                                        <Box display="flex" justifyContent="space-between">
+                                                                            <Typography variant="body1"><strong>Version Number:</strong></Typography>
+                                                                            <Typography variant="body1">{sensorData?.version_number?.$numberInt || sensorData?.version_number}</Typography>
+                                                                        </Box>
+                                                                        <Box display="flex" justifyContent="space-between">
+                                                                            <Typography variant="body1"><strong>Version Date:</strong></Typography>
+                                                                            <Typography variant="body1">{formatDate(sensorData?.versioned_at)}</Typography>
+                                                                        </Box>
+                                                                        <Box display="flex" justifyContent="space-between">
+                                                                            <Typography variant="body1"><strong>Total Readings:</strong></Typography>
+                                                                            <Typography variant="body1">{sensorData?.data_snapshot?.total_readings?.$numberInt || sensorData?.data_snapshot?.data_points?.length}</Typography>
+                                                                        </Box>
+                                                                    </>
+                                                                )}
+                                                            </>
+                                                        );
+                                                    })()}
+                                                </Box>
+                                            </Paper>
+                                        </Grid>
+                                        <Grid item xs={12}>
+                                            <Paper sx={{ p: 3, bgcolor: 'background.default' }}>
+                                                <Typography variant="h6" gutterBottom color="primary">
+                                                    {versionId ? 'Version Information' : 'File Information'}
+                                                </Typography>
+                                                <Box display="flex" justifyContent="space-between" sx={{ mb: 2 }}>
+                                                    <Typography variant="body1"><strong>{versionId ? 'Version ID:' : 'File ID:'}</strong></Typography>
+                                                    <Typography variant="body1" sx={{ fontSize: '0.9rem', wordBreak: 'break-all' }}>
+                                                        {versionId ? (sensorData?._id?.$oid || sensorData?._id) : userDeviceInfo?._id}
+                                                    </Typography>
+                                                </Box>
+                                                {versionId && sensorData?.data_snapshot && (
+                                                    <Box display="flex" justifyContent="space-between" sx={{ mb: 2 }}>
+                                                        <Typography variant="body1"><strong>Data Range:</strong></Typography>
+                                                        <Typography variant="body1" sx={{ fontSize: '0.9rem' }}>
+                                                            {sensorData.data_snapshot.start_time && sensorData.data_snapshot.end_time ?
+                                                                `${formatDate(sensorData.data_snapshot.start_time)} - ${formatDate(sensorData.data_snapshot.end_time)}` :
+                                                                'N/A'
+                                                            }
+                                                        </Typography>
+                                                    </Box>
+                                                )}
+                                            </Paper>
+                                        </Grid>
+                                    </Grid>
+                                ) : (
+                                    <Typography variant="body1" align="center" sx={{ mt: 4 }}>
+                                        No device information available for this user.
+                                    </Typography>
+                                )}
+                            </Paper>
+                        </Container>
+                    ) : (!versionId && currentTab === 1) ? (
+                        (() => {
+                            console.log('Current tab:', currentTab, 'versionId:', versionId);
+                            console.log('Checking data versions for display:', dataVersions);
+                            console.log('Data versions length:', dataVersions?.length);
+                            console.log('Data versions type:', typeof dataVersions);
+                            console.log('Is array?', Array.isArray(dataVersions));
+                            const hasData = dataVersions && dataVersions.length > 0;
+                            console.log('Has data?', hasData);
+                            return hasData;
+                        })() ? (
+                            <TableContainer 
+                                component={Paper} 
+                                sx={{ 
+                                    maxHeight: 'calc(100vh - 250px)',
+                                    overflow: 'auto',
+                                    width: '100.3%',
+                                    '& .MuiTable-root': {
+                                        tableLayout: 'fixed',  // Fixed table layout
+                                        width: '100%',  // Full width
+                                        borderCollapse: 'separate',
+                                        borderSpacing: '0',
+                                    }
+                                }}
+                            >
+                                <Table stickyHeader>
+                                    <TableHead>
+                                        <TableRow>
+                                            <StyledTableCell width="15%">Version</StyledTableCell>
+                                            <StyledTableCell width="25%">Date Created</StyledTableCell>
+                                            <StyledTableCell width="20%">Patient ID</StyledTableCell>
+                                            <StyledTableCell width="15%">Total Readings</StyledTableCell>
+                                            <StyledTableCell width="25%">Data Range</StyledTableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        {dataVersions.map((version) => (
+                                            <StyledTableRow 
+                                                key={version._id.$oid || version._id}
+                                                sx={{ 
+                                                    cursor: 'pointer',
+                                                    '&:hover': {
+                                                        backgroundColor: 'action.hover',
+                                                    }
+                                                }}
+                                                onClick={() => {
+                                                    const vId = version._id.$oid || version._id;
+                                                    console.log('Clicking on version, ID:', vId, 'Full version object:', version);
+                                                    navigate(`/user-versions/${username}/version/${vId}`);
+                                                }}
+                                            >
+                                                <StyledTableCell>{version.version_number}</StyledTableCell>
+                                                <StyledTableCell sx={{ whiteSpace: 'nowrap' }}>
+                                                    {formatDate(version.versioned_at)}
+                                                </StyledTableCell>
+                                                <StyledTableCell>{version.patient_id}</StyledTableCell>
+                                                <StyledTableCell align="center">
+                                                    {version.data_snapshot?.total_readings?.$numberInt || version.data_snapshot?.data_points?.length || 'N/A'}
+                                                </StyledTableCell>
+                                                <StyledTableCell>
+                                                    {version.data_snapshot?.start_time && version.data_snapshot?.end_time ? 
+                                                        `${formatDate(version.data_snapshot.start_time)} - ${formatDate(version.data_snapshot.end_time)}` :
+                                                        'N/A'
+                                                    }
+                                                </StyledTableCell>
+                                            </StyledTableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
+                        ) : (
+                            <Container maxWidth="md">
+                                <Paper sx={{ p: 4, mt: 2 }}>
+                                    <Typography variant="h6" align="center" color="text.secondary">
+                                        No data history available for this user.
+                                    </Typography>
+                                    <Typography variant="body2" align="center" sx={{ mt: 2 }}>
+                                        This user has device information but no historical data versions.
+                                    </Typography>
+                                </Paper>
+                            </Container>
+                        )
+                    ) : (currentTab === (versionId ? 1 : 2)) ? (
+                        sensorData && sensorGraphData.length > 0 ? (
+                            <Box 
+                                sx={{ 
+                                    width: '100%', 
+                                    height: 'calc(100vh - 250px)',
+                                    display: 'grid',
+                                    gridTemplateColumns: '1fr 1fr',
+                                    gridTemplateRows: '1fr 1fr',
+                                    gap: 2,
+                                    p: 0
+                                }}
+                            >
+                            {/* Top Left - Cortisol (ng/mL) */}
+                            <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                                <Typography variant="h6" gutterBottom>
+                                    Cortisol (ng/mL) - Sensor 1
+                                </Typography>
+                                <Box sx={{ flexGrow: 1, minHeight: 0 }}>
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <LineChart data={sensorGraphData}>
+                                            <CartesianGrid strokeDasharray="3 3" />
+                                            <XAxis dataKey="time" angle={-45} textAnchor="end" height={80} />
+                                            <YAxis />
+                                            <Tooltip 
+                                                labelFormatter={(time) => `Time: ${time}`}
+                                                formatter={(value, name) => [value ? value.toFixed(2) : 'N/A', 'Cortisol (ng/mL)']}
+                                            />
+                                            <Legend />
+                                            <Line 
+                                                type="monotone" 
+                                                dataKey="cortisol1" 
+                                                stroke="#8884d8" 
+                                                name="Cortisol (ng/mL)" 
+                                                connectNulls={false}
+                                                dot={{ r: 3 }}
+                                            />
+                                        </LineChart>
+                                    </ResponsiveContainer>
+                                </Box>
+                            </Paper>
+
+                            {/* Top Right - Glucose (mg/dL) */}
+                            <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                                <Typography variant="h6" gutterBottom>
+                                    Glucose (mg/dL) - Sensor 1
+                                </Typography>
+                                <Box sx={{ flexGrow: 1, minHeight: 0 }}>
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <LineChart data={sensorGraphData}>
+                                            <CartesianGrid strokeDasharray="3 3" />
+                                            <XAxis dataKey="time" angle={-45} textAnchor="end" height={80} />
+                                            <YAxis />
+                                            <Tooltip 
+                                                labelFormatter={(time) => `Time: ${time}`}
+                                                formatter={(value, name) => [value ? value.toFixed(2) : 'N/A', 'Glucose (mg/dL)']}
+                                            />
+                                            <Legend />
+                                            <Line 
+                                                type="monotone" 
+                                                dataKey="glucose1" 
+                                                stroke="#82ca9d" 
+                                                name="Glucose (mg/dL)" 
+                                                connectNulls={false}
+                                                dot={{ r: 3 }}
+                                            />
+                                        </LineChart>
+                                    </ResponsiveContainer>
+                                </Box>
+                            </Paper>
+
+                            {/* Bottom Left - Cortisol (ng/mL)_2 */}
+                            <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                                <Typography variant="h6" gutterBottom>
+                                    Cortisol (ng/mL) - Sensor 2
+                                </Typography>
+                                <Box sx={{ flexGrow: 1, minHeight: 0 }}>
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <LineChart data={sensorGraphData}>
+                                            <CartesianGrid strokeDasharray="3 3" />
+                                            <XAxis dataKey="time" angle={-45} textAnchor="end" height={80} />
+                                            <YAxis />
+                                            <Tooltip 
+                                                labelFormatter={(time) => `Time: ${time}`}
+                                                formatter={(value, name) => [value ? value.toFixed(2) : 'N/A', 'Cortisol (ng/mL)_2']}
+                                            />
+                                            <Legend />
+                                            <Line 
+                                                type="monotone" 
+                                                dataKey="cortisol2" 
+                                                stroke="#ff7300" 
+                                                name="Cortisol (ng/mL)_2" 
+                                                connectNulls={false}
+                                                dot={{ r: 3 }}
+                                            />
+                                        </LineChart>
+                                    </ResponsiveContainer>
+                                </Box>
+                            </Paper>
+
+                            {/* Bottom Right - Glucose (mg/dL)_2 */}
+                            <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                                <Typography variant="h6" gutterBottom>
+                                    Glucose (mg/dL) - Sensor 2
+                                </Typography>
+                                <Box sx={{ flexGrow: 1, minHeight: 0 }}>
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <LineChart data={sensorGraphData}>
+                                            <CartesianGrid strokeDasharray="3 3" />
+                                            <XAxis dataKey="time" angle={-45} textAnchor="end" height={80} />
+                                            <YAxis />
+                                            <Tooltip 
+                                                labelFormatter={(time) => `Time: ${time}`}
+                                                formatter={(value, name) => [value ? value.toFixed(2) : 'N/A', 'Glucose (mg/dL)_2']}
+                                            />
+                                            <Legend />
+                                            <Line 
+                                                type="monotone" 
+                                                dataKey="glucose2" 
+                                                stroke="#ff69b4" 
+                                                name="Glucose (mg/dL)_2" 
+                                                connectNulls={false}
+                                                dot={{ r: 3 }}
+                                            />
+                                        </LineChart>
+                                    </ResponsiveContainer>
+                                </Box>
+                            </Paper>
+                        </Box>
+                        ) : (
+                            <Container maxWidth="md">
+                                <Paper sx={{ p: 4, mt: 2 }}>
+                                    <Typography variant="h6" align="center" color="text.secondary">
+                                        No sensor data available for this user.
+                                    </Typography>
+                                    <Typography variant="body2" align="center" sx={{ mt: 2 }}>
+                                        This user has device information but no sensor data readings to display.
+                                    </Typography>
+                                </Paper>
+                            </Container>
+                        )
+                    ) : null}
+                </Box>
+            </Box>
+        </Container>
+    );
+};
+
+export default UserVersions;
