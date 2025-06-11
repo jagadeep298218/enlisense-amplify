@@ -1,7 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import './FileTracker.css';
+import {
+    Container,
+    Paper,
+    Typography,
+    Box,
+    Button,
+    AppBar,
+    Toolbar,
+    Chip,
+    IconButton,
+    Alert,
+    CircularProgress
+} from '@mui/material';
+import { DataGrid } from '@mui/x-data-grid';
+import LogoutIcon from '@mui/icons-material/Logout';
+import DownloadIcon from '@mui/icons-material/Download';
+import AnalyticsIcon from '@mui/icons-material/Analytics';
+import PersonIcon from '@mui/icons-material/Person';
+import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
+import MedicalServicesIcon from '@mui/icons-material/MedicalServices';
 
 const FileTracker = () => {
     const [fileData, setFileData] = useState([]);
@@ -44,14 +63,28 @@ const FileTracker = () => {
     }, []);
 
     const formatDate = (dateString) => {
-        return new Date(dateString).toLocaleString();
+        if (!dateString) return 'N/A';
+        return new Date(dateString).toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
     };
 
-    const getUserType = (file) => {
-        if (file.admin) return 'Admin';
-        if (file.doctor) return 'Doctor';
-        if (file.patient) return 'Patient';
+    const getUserTypeDisplay = (user) => {
+        if (!user) return 'User';
+        if (user.admin) return 'Administrator';
+        if (user.doctor) return 'Doctor';
         return 'User';
+    };
+
+    const getUserTypeIcon = (user) => {
+        if (!user) return <PersonIcon />;
+        if (user.admin) return <AdminPanelSettingsIcon />;
+        if (user.doctor) return <MedicalServicesIcon />;
+        return <PersonIcon />;
     };
 
     const handleLogout = () => {
@@ -60,8 +93,8 @@ const FileTracker = () => {
         window.location.reload();
     };
 
-    const handleCardClick = (username) => {
-        navigate(`/user-versions/${username}`);
+    const handleRowClick = (params) => {
+        navigate(`/user-versions/${params.row.username}`);
     };
 
     const handleDownloadCSV = async () => {
@@ -76,10 +109,9 @@ const FileTracker = () => {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 },
-                responseType: 'blob' // Important for handling file downloads
+                responseType: 'blob'
             });
 
-            // Create a blob from the response data
             const blob = new Blob([response.data], { type: 'text/csv' });
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -94,48 +126,244 @@ const FileTracker = () => {
         }
     };
 
-    if (loading) return <div className="loading">Loading...</div>;
-    if (error) return <div className="error">{error}</div>;
+    // Prepare rows for DataGrid
+    const rows = fileData.map((file, index) => ({
+        id: index,
+        username: file.username || 'N/A',
+        userID: file.device_info?.userID || 'N/A',
+        deviceID: file.device_info?.deviceID || 'N/A',
+        gender: file.device_info?.gender || 'N/A',
+        age: file.device_info?.age?.$numberInt || file.device_info?.age || 'N/A',
+        arm: file.device_info?.arm || 'N/A',
+        sensorCombination: file.device_info?.sensorCombination || 'N/A',
+        lastModified: file.last_modified,
+        processedAt: file.processed_at?.$date?.$numberLong ? 
+            new Date(parseInt(file.processed_at.$date.$numberLong)) : 
+            file.processed_at,
+        fileId: file._id,
+        status: file.etag ? 'Active' : 'Inactive'
+    }));
+
+    // Define columns for DataGrid
+    const columns = [
+        {
+            field: 'username',
+            headerName: 'Username',
+            width: 150,
+            renderCell: (params) => (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <PersonIcon color="primary" />
+                    <Typography variant="body2" fontWeight="medium">
+                        {params.value}
+                    </Typography>
+                </Box>
+            )
+        },
+        {
+            field: 'userID',
+            headerName: 'User ID',
+            width: 120,
+            renderCell: (params) => (
+                <Typography variant="body2" color="text.secondary">
+                    {params.value}
+                </Typography>
+            )
+        },
+        {
+            field: 'deviceID',
+            headerName: 'Device ID',
+            width: 140,
+            renderCell: (params) => (
+                <Typography variant="body2" color="text.secondary">
+                    {params.value}
+                </Typography>
+            )
+        },
+        {
+            field: 'gender',
+            headerName: 'Gender',
+            width: 100,
+            renderCell: (params) => (
+                <Chip 
+                    label={params.value} 
+                    size="small" 
+                    color={params.value === 'Male' ? 'primary' : params.value === 'Female' ? 'secondary' : 'default'}
+                    variant="outlined"
+                />
+            )
+        },
+        {
+            field: 'age',
+            headerName: 'Age',
+            width: 80,
+            type: 'number',
+            renderCell: (params) => (
+                <Typography variant="body2">
+                    {params.value !== 'N/A' ? `${params.value} yrs` : 'N/A'}
+                </Typography>
+            )
+        },
+        {
+            field: 'arm',
+            headerName: 'Arm',
+            width: 100,
+            renderCell: (params) => (
+                <Chip 
+                    label={params.value} 
+                    size="small" 
+                    color={params.value === 'Left' ? 'info' : params.value === 'Right' ? 'warning' : 'default'}
+                    variant="outlined"
+                />
+            )
+        },
+        {
+            field: 'sensorCombination',
+            headerName: 'Sensor Type',
+            width: 150,
+            renderCell: (params) => (
+                <Typography variant="body2" color="text.secondary">
+                    {params.value}
+                </Typography>
+            )
+        },
+        {
+            field: 'lastModified',
+            headerName: 'Last Modified',
+            width: 180,
+            renderCell: (params) => (
+                <Typography variant="body2" color="text.secondary">
+                    {formatDate(params.value)}
+                </Typography>
+            )
+        },
+        {
+            field: 'status',
+            headerName: 'Status',
+            width: 120,
+            renderCell: (params) => (
+                <Chip 
+                    label={params.value}
+                    size="small"
+                    color={params.value === 'Active' ? 'success' : 'default'}
+                    variant={params.value === 'Active' ? 'filled' : 'outlined'}
+                />
+            )
+        }
+    ];
+
+    if (loading) {
+        return (
+            <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
+                <CircularProgress size={60} />
+                <Typography variant="h6" sx={{ ml: 2 }}>Loading user data...</Typography>
+            </Box>
+        );
+    }
+
+    if (error) {
+        return (
+            <Container maxWidth="md" sx={{ mt: 4 }}>
+                <Alert severity="error">{error}</Alert>
+            </Container>
+        );
+    }
 
     return (
-        <div className="file-tracker">
-            <div className="header">
-                <h2>File Tracker Data</h2>
-                <div className="user-info">
+        <Container maxWidth={false} sx={{ mb: 4, px: 2 }}>
+            <AppBar position="static" color="default" elevation={0} sx={{ mb: 3 }}>
+                <Toolbar>
+                    <Typography variant="h6" sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <PersonIcon />
+                        User Management Dashboard
+                    </Typography>
+                    
                     {user && (
-                        <>
-                            <span>Welcome, {user.name || user.username}</span>
-                            <span className="user-type">({getUserType(user)})</span>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                {getUserTypeIcon(user)}
+                                <Box>
+                                    <Typography variant="body2" color="text.primary">
+                                        {user.name || user.username}
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary">
+                                        {getUserTypeDisplay(user)}
+                                    </Typography>
+                                </Box>
+                            </Box>
+                            
                             {user.admin && (
-                                <button onClick={handleDownloadCSV} className="download-btn">
-                                    Download CSV
-                                </button>
+                                <Button
+                                    onClick={handleDownloadCSV}
+                                    startIcon={<DownloadIcon />}
+                                    variant="outlined"
+                                    size="small"
+                                >
+                                    Export CSV
+                                </Button>
                             )}
-                            <button onClick={handleLogout} className="logout-btn">Logout</button>
-                        </>
+                            
+                            {(user.admin || user.doctor) && (
+                                <Button
+                                    onClick={() => navigate('/aggregated-analysis')}
+                                    startIcon={<AnalyticsIcon />}
+                                    variant="contained"
+                                    size="small"
+                                >
+                                    Population Analysis
+                                </Button>
+                            )}
+                            
+                            <IconButton onClick={handleLogout} color="inherit">
+                                <LogoutIcon />
+                            </IconButton>
+                        </Box>
                     )}
-                </div>
-            </div>
-            <div className="file-list">
-                {fileData.map((file, index) => (
-                    <div 
-                        key={index} 
-                        className="file-item"
-                        onClick={() => handleCardClick(file.username)}
-                    >
-                        <h3>{file.username || 'User Profile'}</h3>
-                        <div className="file-details">
-                            <p><strong>Username:</strong> {file.username}</p>
-                            <p><strong>File ID:</strong> {file._id}</p>
-                            <p><strong>Last Modified:</strong> {formatDate(file.last_modified)}</p>
-                            {file.processed_at && (
-                                <p><strong>Processed At:</strong> {formatDate(file.processed_at.$date?.$numberLong ? new Date(parseInt(file.processed_at.$date.$numberLong)) : file.processed_at)}</p>
-                            )}
-                        </div>
-                    </div>
-                ))}
-            </div>
-        </div>
+                </Toolbar>
+            </AppBar>
+
+            <Paper sx={{ p: 3 }}>
+                <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Typography variant="h5" color="primary">
+                        User Data Overview
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                        {fileData.length} users • Click on any row to view details
+                    </Typography>
+                </Box>
+
+                <Box sx={{ height: 600, width: '100%' }}>
+                    <DataGrid
+                        rows={rows}
+                        columns={columns}
+                        pageSize={10}
+                        rowsPerPageOptions={[10, 25, 50]}
+                        onRowClick={handleRowClick}
+                        disableSelectionOnClick
+                        sx={{
+                            '& .MuiDataGrid-row:hover': {
+                                backgroundColor: 'rgba(25, 118, 210, 0.04)',
+                                cursor: 'pointer'
+                            },
+                            '& .MuiDataGrid-cell:focus': {
+                                outline: 'none'
+                            },
+                            '& .MuiDataGrid-row:focus': {
+                                outline: 'none'
+                            }
+                        }}
+                        components={{
+                            NoRowsOverlay: () => (
+                                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                                    <Typography variant="h6" color="text.secondary">
+                                        No user data available
+                                    </Typography>
+                                </Box>
+                            )
+                        }}
+                    />
+                </Box>
+            </Paper>
+        </Container>
     );
 };
 

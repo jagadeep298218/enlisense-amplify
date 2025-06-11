@@ -32,7 +32,7 @@ const authenticateToken = (req, res, next) => {
     });
 };
 
-
+//Get all data from the filetracker (used to test if able to connect and retrieve data from mongodb)
 async function getFileTrackerData() {
     const db = client.db('s3-mongodb-db');
     const collection = db.collection('s3-mongodb-file_tracker');
@@ -40,24 +40,29 @@ async function getFileTrackerData() {
     return data;
 }
 
+//Get version data of specific patients from the data versions collection       
 async function getUserVersions(patientId) {
     const db = client.db('s3-mongodb-db');
     const collection = db.collection('s3-mongodb-data-versions');
     return await collection.find({ patient_id: patientId }).sort({ versioned_at: -1 }).toArray();
 }
 
+// Used to find a specific user and get the information from filetracker
 async function findUser(username) {
     const db = client.db('s3-mongodb-db');
     const collection = db.collection('s3-mongodb-file_tracker');
     return await collection.findOne({ username: username });
 }
 
+//Used to find and get the latest entry and info of a certain user
 async function currentVersion(latestUser) {
     const db = client.db('s3-mongo-db');
     const collection = db.collection('s3-mongodb-data-entires');
     return await collection.findOne({username: latestUser });
 }
 
+
+//To get past version control data
 async function checkUserAccessToPatientId(user, patientId) {
     try {
         const db = client.db('s3-mongodb-db');

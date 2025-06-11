@@ -130,4 +130,20 @@
 
 .download-btn:hover {
     background-color: #45a049;
+}
+
+.analysis-btn {
+    background-color: #3498db;
+    color: white;
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-right: 10px;
+    font-size: 14px;
+    transition: background-color 0.3s;
+}
+
+.analysis-btn:hover {
+    background-color: #2980b9;
 } 

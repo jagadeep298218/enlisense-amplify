@@ -18,19 +18,14 @@ import {
     Tab,
     Tabs,
     Grid,
-    styled
+    styled,
+    Chip
 } from '@mui/material';
+import { DataGrid } from '@mui/x-data-grid';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import {
-    LineChart,
-    Line,
-    XAxis,
-    YAxis,
-    CartesianGrid,
-    Tooltip,
-    Legend,
-    ResponsiveContainer
-} from 'recharts';
+import ScienceIcon from '@mui/icons-material/Science';
+import BloodtypeIcon from '@mui/icons-material/Bloodtype';
+import ViolinPlot from './ViolinPlot';
 
 // Styled components
 const StyledTableCell = styled(TableCell)(({ theme }) => ({
@@ -238,7 +233,7 @@ const UserVersions = () => {
         }));  // Removed .reverse() to maintain the ascending order
     };
 
-    const prepareSensorGraphData = () => {
+    const prepareSensorTableData = () => {
         // Handle both current sensor data and version data formats
         let dataPoints;
         if (versionId && sensorData?.data_snapshot?.data_points) {
@@ -258,7 +253,7 @@ const UserVersions = () => {
         
         return dataPoints.map((point, index) => {
             let timestamp;
-            let timeString;
+            let dateTime;
             
             try {
                 // Handle different timestamp formats
@@ -276,20 +271,41 @@ const UserVersions = () => {
                     timestamp = Date.now() + (index * 1000); // Fallback with incremental time
                 }
                 
-                timeString = new Date(timestamp).toLocaleTimeString();
+                dateTime = new Date(timestamp);
             } catch (error) {
                 console.warn('Error parsing timestamp for point:', point, error);
                 timestamp = Date.now() + (index * 1000);
-                timeString = `Point ${index + 1}`;
+                dateTime = new Date(timestamp);
             }
             
+            // Extract sensor values
+            const cortisol1 = point['Cortisol(ng/mL)']?.$numberDouble || point['Cortisol(ng/mL)'];
+            const glucose1 = point['Glucose(mg/dL)']?.$numberDouble || point['Glucose(mg/dL)'];
+            const cortisol2 = point['Cortisol(ng/mL)_2']?.$numberDouble || point['Cortisol(ng/mL)_2'];
+            const glucose2 = point['Glucose(mg/dL)_2']?.$numberDouble || point['Glucose(mg/dL)_2'];
+            
             return {
-                time: timeString,
+                id: index,
+                reading: index + 1,
                 timestamp: timestamp,
-                cortisol1: point['Cortisol(ng/mL)']?.$numberDouble || point['Cortisol(ng/mL)'] || null,
-                glucose1: point['Glucose(mg/dL)']?.$numberDouble || point['Glucose(mg/dL)'] || null,
-                cortisol2: point['Cortisol(ng/mL)_2']?.$numberDouble || point['Cortisol(ng/mL)_2'] || null,
-                glucose2: point['Glucose(mg/dL)_2']?.$numberDouble || point['Glucose(mg/dL)_2'] || null
+                dateTime: dateTime.toLocaleString('en-US', {
+                    year: 'numeric',
+                    month: 'short',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit'
+                }),
+                time: dateTime.toLocaleTimeString('en-US', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit'
+                }),
+                cortisol1: cortisol1 !== null && cortisol1 !== undefined && !isNaN(cortisol1) ? Number(cortisol1).toFixed(3) : null,
+                glucose1: glucose1 !== null && glucose1 !== undefined && !isNaN(glucose1) ? Number(glucose1).toFixed(2) : null,
+                cortisol2: cortisol2 !== null && cortisol2 !== undefined && !isNaN(cortisol2) ? Number(cortisol2).toFixed(3) : null,
+                glucose2: glucose2 !== null && glucose2 !== undefined && !isNaN(glucose2) ? Number(glucose2).toFixed(2) : null,
+                status: (cortisol1 || cortisol2 || glucose1 || glucose2) ? 'Valid' : 'No Data'
             };
         }).sort((a, b) => a.timestamp - b.timestamp);
     };
@@ -307,7 +323,7 @@ const UserVersions = () => {
     );
 
     const graphData = prepareGraphData();
-    const sensorGraphData = prepareSensorGraphData();
+    const sensorTableData = prepareSensorTableData();
 
     return (
         <Container maxWidth={false} sx={{ mb: 4, px: 4 }}>
@@ -333,8 +349,9 @@ const UserVersions = () => {
                     }}
                 >
                     <Tab label="Device Info" />
-                    {!versionId && <Tab label="Data Table" />}
+                    {!versionId && <Tab label="Past Data" />}
                     <Tab label="Sensor Data" />
+                    <Tab label="Violin Plots" />
                 </Tabs>
 
                 <Box sx={{ mt: 3 }}>
@@ -562,134 +579,165 @@ const UserVersions = () => {
                             </Container>
                         )
                     ) : (currentTab === (versionId ? 1 : 2)) ? (
-                        sensorData && sensorGraphData.length > 0 ? (
-                            <Box 
-                                sx={{ 
-                                    width: '100%', 
-                                    height: 'calc(100vh - 250px)',
-                                    display: 'grid',
-                                    gridTemplateColumns: '1fr 1fr',
-                                    gridTemplateRows: '1fr 1fr',
-                                    gap: 2,
-                                    p: 0
-                                }}
-                            >
-                            {/* Top Left - Cortisol (ng/mL) */}
-                            <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                                <Typography variant="h6" gutterBottom>
-                                    Cortisol (ng/mL) - Sensor 1
-                                </Typography>
-                                <Box sx={{ flexGrow: 1, minHeight: 0 }}>
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <LineChart data={sensorGraphData}>
-                                            <CartesianGrid strokeDasharray="3 3" />
-                                            <XAxis dataKey="time" angle={-45} textAnchor="end" height={80} />
-                                            <YAxis />
-                                            <Tooltip 
-                                                labelFormatter={(time) => `Time: ${time}`}
-                                                formatter={(value, name) => [value ? value.toFixed(2) : 'N/A', 'Cortisol (ng/mL)']}
-                                            />
-                                            <Legend />
-                                            <Line 
-                                                type="monotone" 
-                                                dataKey="cortisol1" 
-                                                stroke="#8884d8" 
-                                                name="Cortisol (ng/mL)" 
-                                                connectNulls={false}
-                                                dot={{ r: 3 }}
-                                            />
-                                        </LineChart>
-                                    </ResponsiveContainer>
+                        sensorData && sensorTableData.length > 0 ? (
+                            <Paper sx={{ p: 3 }}>
+                                <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <Typography variant="h5" color="primary" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                        <ScienceIcon />
+                                        Sensor Data Readings
+                                    </Typography>
+                                    <Typography variant="body2" color="text.secondary">
+                                        {sensorTableData.length} readings • Real-time biomarker data
+                                    </Typography>
                                 </Box>
-                            </Paper>
 
-                            {/* Top Right - Glucose (mg/dL) */}
-                            <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                                <Typography variant="h6" gutterBottom>
-                                    Glucose (mg/dL) - Sensor 1
-                                </Typography>
-                                <Box sx={{ flexGrow: 1, minHeight: 0 }}>
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <LineChart data={sensorGraphData}>
-                                            <CartesianGrid strokeDasharray="3 3" />
-                                            <XAxis dataKey="time" angle={-45} textAnchor="end" height={80} />
-                                            <YAxis />
-                                            <Tooltip 
-                                                labelFormatter={(time) => `Time: ${time}`}
-                                                formatter={(value, name) => [value ? value.toFixed(2) : 'N/A', 'Glucose (mg/dL)']}
-                                            />
-                                            <Legend />
-                                            <Line 
-                                                type="monotone" 
-                                                dataKey="glucose1" 
-                                                stroke="#82ca9d" 
-                                                name="Glucose (mg/dL)" 
-                                                connectNulls={false}
-                                                dot={{ r: 3 }}
-                                            />
-                                        </LineChart>
-                                    </ResponsiveContainer>
+                                <Box sx={{ height: 600, width: '100%' }}>
+                                    <DataGrid
+                                        rows={sensorTableData}
+                                        columns={[
+                                            {
+                                                field: 'reading',
+                                                headerName: 'Reading #',
+                                                width: 100,
+                                                type: 'number',
+                                                renderCell: (params) => (
+                                                    <Typography variant="body2" fontWeight="medium">
+                                                        #{params.value}
+                                                    </Typography>
+                                                )
+                                            },
+                                            {
+                                                field: 'dateTime',
+                                                headerName: 'Date & Time',
+                                                width: 180,
+                                                renderCell: (params) => (
+                                                    <Typography variant="body2" color="text.secondary">
+                                                        {params.value}
+                                                    </Typography>
+                                                )
+                                            },
+                                            {
+                                                field: 'cortisol1',
+                                                headerName: 'Cortisol Sensor 1',
+                                                width: 150,
+                                                type: 'number',
+                                                renderCell: (params) => (
+                                                    params.value ? (
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                            <BloodtypeIcon color="primary" fontSize="small" />
+                                                            <Typography variant="body2" fontWeight="medium">
+                                                                {params.value} ng/mL
+                                                            </Typography>
+                                                        </Box>
+                                                    ) : (
+                                                        <Typography variant="body2" color="text.disabled">
+                                                            No Data
+                                                        </Typography>
+                                                    )
+                                                )
+                                            },
+                                            {
+                                                field: 'cortisol2',
+                                                headerName: 'Cortisol Sensor 2',
+                                                width: 150,
+                                                type: 'number',
+                                                renderCell: (params) => (
+                                                    params.value ? (
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                            <BloodtypeIcon color="secondary" fontSize="small" />
+                                                            <Typography variant="body2" fontWeight="medium">
+                                                                {params.value} ng/mL
+                                                            </Typography>
+                                                        </Box>
+                                                    ) : (
+                                                        <Typography variant="body2" color="text.disabled">
+                                                            No Data
+                                                        </Typography>
+                                                    )
+                                                )
+                                            },
+                                            {
+                                                field: 'glucose1',
+                                                headerName: 'Glucose Sensor 1',
+                                                width: 150,
+                                                type: 'number',
+                                                renderCell: (params) => (
+                                                    params.value ? (
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                            <ScienceIcon color="success" fontSize="small" />
+                                                            <Typography variant="body2" fontWeight="medium">
+                                                                {params.value} mg/dL
+                                                            </Typography>
+                                                        </Box>
+                                                    ) : (
+                                                        <Typography variant="body2" color="text.disabled">
+                                                            No Data
+                                                        </Typography>
+                                                    )
+                                                )
+                                            },
+                                            {
+                                                field: 'glucose2',
+                                                headerName: 'Glucose Sensor 2',
+                                                width: 150,
+                                                type: 'number',
+                                                renderCell: (params) => (
+                                                    params.value ? (
+                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                            <ScienceIcon color="warning" fontSize="small" />
+                                                            <Typography variant="body2" fontWeight="medium">
+                                                                {params.value} mg/dL
+                                                            </Typography>
+                                                        </Box>
+                                                    ) : (
+                                                        <Typography variant="body2" color="text.disabled">
+                                                            No Data
+                                                        </Typography>
+                                                    )
+                                                )
+                                            },
+                                            {
+                                                field: 'status',
+                                                headerName: 'Status',
+                                                width: 120,
+                                                renderCell: (params) => (
+                                                    <Chip 
+                                                        label={params.value}
+                                                        size="small"
+                                                        color={params.value === 'Valid' ? 'success' : 'default'}
+                                                        variant={params.value === 'Valid' ? 'filled' : 'outlined'}
+                                                    />
+                                                )
+                                            }
+                                        ]}
+                                        pageSize={15}
+                                        rowsPerPageOptions={[15, 25, 50, 100]}
+                                        disableSelectionOnClick
+                                        sx={{
+                                            '& .MuiDataGrid-cell:focus': {
+                                                outline: 'none'
+                                            },
+                                            '& .MuiDataGrid-row:focus': {
+                                                outline: 'none'
+                                            },
+                                            '& .MuiDataGrid-columnHeaders': {
+                                                backgroundColor: 'primary.main',
+                                                color: 'primary.contrastText',
+                                                fontWeight: 'bold'
+                                            }
+                                        }}
+                                        components={{
+                                            NoRowsOverlay: () => (
+                                                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                                                    <Typography variant="h6" color="text.secondary">
+                                                        No sensor readings available
+                                                    </Typography>
+                                                </Box>
+                                            )
+                                        }}
+                                    />
                                 </Box>
                             </Paper>
-
-                            {/* Bottom Left - Cortisol (ng/mL)_2 */}
-                            <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                                <Typography variant="h6" gutterBottom>
-                                    Cortisol (ng/mL) - Sensor 2
-                                </Typography>
-                                <Box sx={{ flexGrow: 1, minHeight: 0 }}>
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <LineChart data={sensorGraphData}>
-                                            <CartesianGrid strokeDasharray="3 3" />
-                                            <XAxis dataKey="time" angle={-45} textAnchor="end" height={80} />
-                                            <YAxis />
-                                            <Tooltip 
-                                                labelFormatter={(time) => `Time: ${time}`}
-                                                formatter={(value, name) => [value ? value.toFixed(2) : 'N/A', 'Cortisol (ng/mL)_2']}
-                                            />
-                                            <Legend />
-                                            <Line 
-                                                type="monotone" 
-                                                dataKey="cortisol2" 
-                                                stroke="#ff7300" 
-                                                name="Cortisol (ng/mL)_2" 
-                                                connectNulls={false}
-                                                dot={{ r: 3 }}
-                                            />
-                                        </LineChart>
-                                    </ResponsiveContainer>
-                                </Box>
-                            </Paper>
-
-                            {/* Bottom Right - Glucose (mg/dL)_2 */}
-                            <Paper sx={{ p: 2, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                                <Typography variant="h6" gutterBottom>
-                                    Glucose (mg/dL) - Sensor 2
-                                </Typography>
-                                <Box sx={{ flexGrow: 1, minHeight: 0 }}>
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <LineChart data={sensorGraphData}>
-                                            <CartesianGrid strokeDasharray="3 3" />
-                                            <XAxis dataKey="time" angle={-45} textAnchor="end" height={80} />
-                                            <YAxis />
-                                            <Tooltip 
-                                                labelFormatter={(time) => `Time: ${time}`}
-                                                formatter={(value, name) => [value ? value.toFixed(2) : 'N/A', 'Glucose (mg/dL)_2']}
-                                            />
-                                            <Legend />
-                                            <Line 
-                                                type="monotone" 
-                                                dataKey="glucose2" 
-                                                stroke="#ff69b4" 
-                                                name="Glucose (mg/dL)_2" 
-                                                connectNulls={false}
-                                                dot={{ r: 3 }}
-                                            />
-                                        </LineChart>
-                                    </ResponsiveContainer>
-                                </Box>
-                            </Paper>
-                        </Box>
                         ) : (
                             <Container maxWidth="md">
                                 <Paper sx={{ p: 4, mt: 2 }}>
@@ -698,6 +746,25 @@ const UserVersions = () => {
                                     </Typography>
                                     <Typography variant="body2" align="center" sx={{ mt: 2 }}>
                                         This user has device information but no sensor data readings to display.
+                                    </Typography>
+                                </Paper>
+                            </Container>
+                        )
+                    ) : (currentTab === (versionId ? 2 : 3)) ? (
+                        // Violin Plot Tab
+                        sensorData && sensorTableData.length > 0 ? (
+                            <ViolinPlot 
+                                sensorData={sensorTableData} 
+                                title={versionId ? `Violin Plot Analysis - Version ${sensorData?.version_number || 'N/A'}` : "Sensor Data Distribution Analysis"}
+                            />
+                        ) : (
+                            <Container maxWidth="md">
+                                <Paper sx={{ p: 4, mt: 2 }}>
+                                    <Typography variant="h6" align="center" color="text.secondary">
+                                        No sensor data available for violin plot visualization.
+                                    </Typography>
+                                    <Typography variant="body2" align="center" sx={{ mt: 2 }}>
+                                        Please ensure sensor data is available before viewing distribution plots.
                                     </Typography>
                                 </Paper>
                             </Container>

@@ -4,6 +4,7 @@ import './App.css';
 import FileTracker from './components/FileTracker';
 import UserVersions from './components/UserVersions';
 import Login from './components/Login';
+import AggregatedViolinPlots from './components/AggregatedViolinPlots';
 import './components/FileTracker.css';
 
 function App() {
@@ -49,6 +50,16 @@ function App() {
             element={
               isAuthenticated ? (
                 <UserVersions />
+              ) : (
+                <Navigate to="/" replace />
+              )
+            } 
+          />
+          <Route 
+            path="/aggregated-analysis" 
+            element={
+              isAuthenticated ? (
+                <AggregatedViolinPlots />
               ) : (
                 <Navigate to="/" replace />
               )
