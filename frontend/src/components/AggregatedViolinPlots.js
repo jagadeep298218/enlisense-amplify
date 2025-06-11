@@ -27,7 +27,10 @@ import {
     AccordionDetails,
     Checkbox,
     OutlinedInput,
-    ListItemText
+    ListItemText,
+    Switch,
+    FormControlLabel,
+    Divider
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -46,6 +49,19 @@ const AggregatedViolinPlots = () => {
     const [filteredUserCount, setFilteredUserCount] = useState(0);
     const [user, setUser] = useState(null);
     const [filtersExpanded, setFiltersExpanded] = useState(false);
+    const [selectedBiomarker, setSelectedBiomarker] = useState('cortisol');
+    const [maxTimePoints, setMaxTimePoints] = useState(20);
+    const [comparisonMode, setComparisonMode] = useState(false);
+    const [comparisonFilters, setComparisonFilters] = useState({
+        userIDs: [],
+        deviceIDs: [],
+        genders: [],
+        ageMin: '',
+        ageMax: '',
+        arms: [],
+        startDate: '',
+        endDate: ''
+    });
     
     // Filter states
     const [filters, setFilters] = useState({
@@ -315,6 +331,13 @@ const AggregatedViolinPlots = () => {
         }));
     };
 
+    const handleComparisonFilterChange = (filterType, value) => {
+        setComparisonFilters(prev => ({
+            ...prev,
+            [filterType]: value
+        }));
+    };
+
     const clearAllFilters = () => {
         setFilters({
             userIDs: [],
@@ -350,86 +373,263 @@ const AggregatedViolinPlots = () => {
         return 'User';
     };
 
-    const cortisolPlot = {
-        data: [
-            ...(aggregatedData.cortisol.length > 0 ? [{
-                type: 'violin',
-                y: aggregatedData.cortisol,
-                name: 'Cortisol (ng/mL)',
-                box: { visible: true },
-                meanline: { visible: true },
-                fillcolor: 'rgba(136, 132, 216, 0.6)',
-                line: { color: 'rgb(136, 132, 216)' },
-                x0: 'Cortisol',
-                points: 'all',
-                pointpos: 0,
-                jitter: 0.3,
-                marker: {
-                    size: 4,
-                    color: 'rgba(136, 132, 216, 0.8)',
-                    line: {
-                        width: 0.5,
-                        color: 'rgb(136, 132, 216)'
-                    }
-                }
-            }] : [])
-        ],
-        layout: {
-            title: { text: 'Filtered Cortisol Distribution (ng/mL)', font: { size: 18 } },
-            yaxis: { title: 'Cortisol (ng/mL)', zeroline: false, titlefont: { size: 14 } },
-            xaxis: { title: 'Biomarker', titlefont: { size: 14 } },
-            showlegend: false,
-            margin: { t: 60, b: 60, l: 80, r: 50 },
-            width: null,
-            height: 400,
-            autosize: false
-        },
-        config: {
-            responsive: true,
-            displayModeBar: true,
-            modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d']
-        }
+    const applyFilters = (data, filterSet) => {
+        return data.filter(item => {
+            // Apply all filters
+            if (filterSet.userIDs.length > 0 && !filterSet.userIDs.includes(item.userID)) return false;
+            if (filterSet.deviceIDs.length > 0 && !filterSet.deviceIDs.includes(item.deviceID)) return false;
+            if (filterSet.genders.length > 0 && !filterSet.genders.includes(item.gender)) return false;
+            if (filterSet.arms.length > 0 && !filterSet.arms.includes(item.arm)) return false;
+            
+            if (filterSet.ageMin && item.age < parseInt(filterSet.ageMin)) return false;
+            if (filterSet.ageMax && item.age > parseInt(filterSet.ageMax)) return false;
+            
+            if (filterSet.startDate && item.timestamp < new Date(filterSet.startDate)) return false;
+            if (filterSet.endDate && item.timestamp > new Date(filterSet.endDate + 'T23:59:59')) return false;
+            
+            return true;
+        });
     };
 
-    const glucosePlot = {
-        data: [
-            ...(aggregatedData.glucose.length > 0 ? [{
-                type: 'violin',
-                y: aggregatedData.glucose,
-                name: 'Glucose (mg/dL)',
-                box: { visible: true },
-                meanline: { visible: true },
-                fillcolor: 'rgba(130, 202, 157, 0.6)',
-                line: { color: 'rgb(130, 202, 157)' },
-                x0: 'Glucose',
-                points: 'all',
-                pointpos: 0,
-                jitter: 0.3,
-                marker: {
-                    size: 4,
-                    color: 'rgba(130, 202, 157, 0.8)',
-                    line: {
-                        width: 0.5,
-                        color: 'rgb(130, 202, 157)'
-                    }
+    const prepareTimeSeriesViolinData = () => {
+        if (!allUsersData || allUsersData.length === 0) return null;
+
+        // Filter data based on current filters
+        const filteredData = applyFilters(allUsersData, filters);
+        
+        // If comparison mode, also filter with comparison filters
+        const comparisonData = comparisonMode ? applyFilters(allUsersData, comparisonFilters) : null;
+
+        const processDataGroup = (data, groupName) => {
+            const timeGroups = {};
+            
+            data.forEach(item => {
+                if (item.biomarkerType !== selectedBiomarker) return;
+                
+                const timestamp = item.timestamp;
+                if (!timestamp) return;
+                
+                const timeKey = new Date(timestamp).toISOString();
+                
+                if (!timeGroups[timeKey]) {
+                    timeGroups[timeKey] = {
+                        timestamp: timestamp,
+                        values: [],
+                        groupName: groupName
+                    };
                 }
-            }] : [])
-        ],
-        layout: {
-            title: { text: 'Filtered Glucose Distribution (mg/dL)', font: { size: 18 } },
-            yaxis: { title: 'Glucose (mg/dL)', zeroline: false, titlefont: { size: 14 } },
-            xaxis: { title: 'Biomarker', titlefont: { size: 14 } },
-            showlegend: false,
-            margin: { t: 60, b: 60, l: 80, r: 50 },
-            width: null,
-            height: 400,
-            autosize: false
-        },
-        config: {
-            responsive: true,
-            displayModeBar: true,
-            modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d']
+                
+                timeGroups[timeKey].values.push(item.value);
+            });
+
+            return Object.values(timeGroups);
+        };
+
+        // Process main dataset
+        const mainData = processDataGroup(filteredData, 'Dataset 1');
+        
+        // Process comparison dataset if in comparison mode
+        const compData = comparisonMode ? processDataGroup(comparisonData, 'Dataset 2') : [];
+
+        // Combine and sort all time groups
+        const allTimeGroups = [...mainData, ...compData]
+            .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+        // Apply time point limit (if not "All Time Points")
+        const limitedTimeGroups = maxTimePoints === -1 ? allTimeGroups : allTimeGroups.slice(0, maxTimePoints);
+
+        return { 
+            main: limitedTimeGroups.filter(group => group.groupName === 'Dataset 1'),
+            comparison: comparisonMode ? limitedTimeGroups.filter(group => group.groupName === 'Dataset 2') : null
+        };
+    };
+
+    const createTimeSeriesViolinPlotData = () => {
+        const timeSeriesData = prepareTimeSeriesViolinData();
+        if (!timeSeriesData || (!timeSeriesData.main || timeSeriesData.main.length === 0)) return null;
+
+        const plotData = [];
+        const xLabels = new Set();
+
+        const processDataset = (dataset, datasetName, colorScheme) => {
+            dataset.forEach((timeGroup, index) => {
+                const biomarkerData = timeGroup.values;
+                
+                // Only create violin if we have at least 2 data points for meaningful distribution
+                if (biomarkerData.length >= 2) {
+                    const timeLabel = new Date(timeGroup.timestamp).toLocaleTimeString('en-US', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit'
+                    });
+                    
+                    xLabels.add(timeLabel);
+                    
+                    plotData.push({
+                        type: 'violin',
+                        y: biomarkerData,
+                        x: Array(biomarkerData.length).fill(timeLabel),
+                        name: `${timeLabel} - ${datasetName}`,
+                        legendgroup: datasetName,
+                        side: comparisonMode ? (datasetName === 'Dataset 1' ? 'negative' : 'positive') : 'both',
+                        box: {
+                            visible: true,
+                            width: 0.3
+                        },
+                        meanline: {
+                            visible: true
+                        },
+                        points: 'all',
+                        pointpos: 0,
+                        jitter: 0.3,
+                        fillcolor: colorScheme.fill,
+                        line: {
+                            color: colorScheme.line
+                        },
+                        marker: {
+                            size: 3,
+                            color: colorScheme.marker,
+                            line: {
+                                width: 0.5,
+                                color: colorScheme.line
+                            }
+                        },
+                        scalemode: 'width',
+                        width: comparisonMode ? 0.4 : 0.8,
+                        showlegend: comparisonMode
+                    });
+                } else if (biomarkerData.length === 1) {
+                    // For single points, create a scatter plot instead
+                    const timeLabel = new Date(timeGroup.timestamp).toLocaleTimeString('en-US', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit'
+                    });
+                    
+                    xLabels.add(timeLabel);
+                    
+                    plotData.push({
+                        type: 'scatter',
+                        mode: 'markers',
+                        y: biomarkerData,
+                        x: [timeLabel],
+                        name: `${timeLabel} - ${datasetName}`,
+                        legendgroup: datasetName,
+                        marker: {
+                            size: 8,
+                            color: colorScheme.marker,
+                            line: {
+                                width: 2,
+                                color: colorScheme.line
+                            }
+                        },
+                        showlegend: comparisonMode
+                    });
+                }
+            });
+        };
+
+        // Color schemes for datasets
+        const mainColors = {
+            fill: selectedBiomarker === 'cortisol' ? 'rgba(136, 132, 216, 0.6)' : 'rgba(130, 202, 157, 0.6)',
+            line: selectedBiomarker === 'cortisol' ? 'rgb(136, 132, 216)' : 'rgb(130, 202, 157)',
+            marker: selectedBiomarker === 'cortisol' ? 'rgba(136, 132, 216, 0.8)' : 'rgba(130, 202, 157, 0.8)'
+        };
+
+        const comparisonColors = {
+            fill: selectedBiomarker === 'cortisol' ? 'rgba(255, 152, 0, 0.6)' : 'rgba(244, 67, 54, 0.6)',
+            line: selectedBiomarker === 'cortisol' ? 'rgb(255, 152, 0)' : 'rgb(244, 67, 54)',
+            marker: selectedBiomarker === 'cortisol' ? 'rgba(255, 152, 0, 0.8)' : 'rgba(244, 67, 54, 0.8)'
+        };
+
+        // Process main dataset
+        processDataset(timeSeriesData.main, 'Dataset 1', mainColors);
+
+        // Process comparison dataset if available
+        if (comparisonMode && timeSeriesData.comparison) {
+            processDataset(timeSeriesData.comparison, 'Dataset 2', comparisonColors);
         }
+
+        return { plotData, xLabels: Array.from(xLabels).sort() };
+    };
+
+    const timeSeriesPlotResult = createTimeSeriesViolinPlotData();
+
+    const timeSeriesPlotLayout = timeSeriesPlotResult ? {
+        title: {
+            text: `Population ${selectedBiomarker.charAt(0).toUpperCase() + selectedBiomarker.slice(1)} Distribution Over Time${comparisonMode ? ' - Comparison View' : ''}`,
+            font: { size: 20 }
+        },
+        xaxis: {
+            title: 'Time Points',
+            titlefont: { size: 14 },
+            tickangle: -45,
+            type: 'category'
+        },
+        yaxis: {
+            title: selectedBiomarker === 'cortisol' ? 'Cortisol (ng/mL)' : 'Glucose (mg/dL)',
+            titlefont: { size: 14 },
+            zeroline: false
+        },
+        showlegend: comparisonMode,
+        legend: comparisonMode ? {
+            x: 1.02,
+            y: 1,
+            bgcolor: 'rgba(255,255,255,0.8)',
+            bordercolor: 'rgba(0,0,0,0.2)',
+            borderwidth: 1
+        } : undefined,
+        margin: { t: 80, b: 100, l: 80, r: comparisonMode ? 150 : 50 },
+        height: 600,
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        violinmode: 'group',
+        violingap: 0.3,
+        violingroupgap: 0.3
+    } : null;
+
+    const timeSeriesPlotConfig = {
+        responsive: true,
+        displayModeBar: true,
+        modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d'],
+        displaylogo: false
+    };
+
+    const getTimeSeriesDataSummary = () => {
+        const timeSeriesData = prepareTimeSeriesViolinData();
+        if (!timeSeriesData) return null;
+
+        const processSummary = (dataset, datasetName) => {
+            const biomarkerCounts = dataset.map(group => ({
+                time: new Date(group.timestamp).toLocaleTimeString('en-US', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit'
+                }),
+                count: group.values.length,
+                values: group.values
+            })).filter(item => item.count > 0);
+
+            const totalReadings = biomarkerCounts.reduce((sum, item) => sum + item.count, 0);
+            const avgReadingsPerTime = biomarkerCounts.length > 0 ? totalReadings / biomarkerCounts.length : 0;
+
+            return {
+                name: datasetName,
+                totalTimePoints: biomarkerCounts.length,
+                totalReadings,
+                avgReadingsPerTime: avgReadingsPerTime.toFixed(1),
+                timePointsWithMultipleReadings: biomarkerCounts.filter(item => item.count > 1).length
+            };
+        };
+
+        const mainSummary = processSummary(timeSeriesData.main, 'Dataset 1');
+        const comparisonSummary = comparisonMode && timeSeriesData.comparison ? 
+            processSummary(timeSeriesData.comparison, 'Dataset 2') : null;
+
+        return {
+            main: mainSummary,
+            comparison: comparisonSummary
+        };
     };
 
     if (loading) return (
@@ -703,77 +903,318 @@ const AggregatedViolinPlots = () => {
                     </Grid>
                 </Grid>
 
-                {aggregatedData.cortisol.length > 0 || aggregatedData.glucose.length > 0 ? (
+                {allUsersData.length > 0 ? (
                     <>
                         <Typography variant="h5" gutterBottom align="center" color="primary" sx={{ mb: 3 }}>
-                            {getActiveFiltersCount() > 0 ? 'Filtered' : 'Population-Level'} Biomarker Distribution Analysis
+                            {getActiveFiltersCount() > 0 ? 'Filtered' : 'Population-Level'} Time Series Biomarker Analysis
                         </Typography>
                         
-                        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, gap: 3, mb: 3 }}>
-                            {aggregatedData.cortisol.length > 0 && (
-                                <Paper sx={{ p: 2, flex: 1, minWidth: 0 }}>
-                                    <Plot
-                                        data={cortisolPlot.data}
-                                        layout={cortisolPlot.layout}
-                                        config={cortisolPlot.config}
-                                        useResizeHandler={false}
-                                        style={{ width: '100%', height: '500px' }}
+                                                {/* Time Series Controls */}
+                        <Paper sx={{ p: 2, mb: 3 }}>
+                            <Grid container spacing={3} alignItems="center">
+                                <Grid item xs={12} md={3}>
+                                    <FormControl fullWidth>
+                                        <InputLabel>Biomarker</InputLabel>
+                                        <Select
+                                            value={selectedBiomarker}
+                                            onChange={(e) => setSelectedBiomarker(e.target.value)}
+                                            label="Biomarker"
+                                        >
+                                            <MenuItem value="cortisol">Cortisol (ng/mL)</MenuItem>
+                                            <MenuItem value="glucose">Glucose (mg/dL)</MenuItem>
+                                        </Select>
+                                    </FormControl>
+                                </Grid>
+                                <Grid item xs={12} md={3}>
+                                    <FormControl fullWidth>
+                                        <InputLabel>Max Time Points</InputLabel>
+                                        <Select
+                                            value={maxTimePoints}
+                                            onChange={(e) => setMaxTimePoints(e.target.value)}
+                                            label="Max Time Points"
+                                        >
+                                            <MenuItem value={10}>10 Time Points</MenuItem>
+                                            <MenuItem value={20}>20 Time Points</MenuItem>
+                                            <MenuItem value={50}>50 Time Points</MenuItem>
+                                            <MenuItem value={100}>100 Time Points</MenuItem>
+                                            <MenuItem value={-1}>All Time Points</MenuItem>
+                                        </Select>
+                                    </FormControl>
+                                </Grid>
+                                <Grid item xs={12} md={3}>
+                                    <FormControlLabel
+                                        control={
+                                            <Switch
+                                                checked={comparisonMode}
+                                                onChange={(e) => setComparisonMode(e.target.checked)}
+                                                name="comparisonMode"
+                                                color="primary"
+                                            />
+                                        }
+                                        label="Comparison Mode"
                                     />
-                                </Paper>
-                            )}
-
-                            {aggregatedData.glucose.length > 0 && (
-                                <Paper sx={{ p: 2, flex: 1, minWidth: 0 }}>
-                                    <Plot
-                                        data={glucosePlot.data}
-                                        layout={glucosePlot.layout}
-                                        config={glucosePlot.config}
-                                        useResizeHandler={false}
-                                        style={{ width: '100%', height: '500px' }}
-                                    />
-                                </Paper>
-                            )}
-                        </Box>
-
-                        <Paper sx={{ p: 3, mt: 3, bgcolor: 'background.default' }}>
-                            <Typography variant="h6" gutterBottom color="primary">Statistical Summary</Typography>
-                            <Grid container spacing={3}>
-                                {aggregatedData.cortisol.length > 0 && (
-                                    <Grid item xs={12} md={6}>
-                                        <Typography variant="h6" color="primary" gutterBottom>Cortisol (ng/mL)</Typography>
-                                        <Typography variant="body1">
-                                            <strong>Mean:</strong> {(aggregatedData.cortisol.reduce((a, b) => a + b, 0) / aggregatedData.cortisol.length).toFixed(2)}
-                                        </Typography>
-                                        <Typography variant="body1">
-                                            <strong>Min:</strong> {Math.min(...aggregatedData.cortisol).toFixed(2)}
-                                        </Typography>
-                                        <Typography variant="body1">
-                                            <strong>Max:</strong> {Math.max(...aggregatedData.cortisol).toFixed(2)}
-                                        </Typography>
-                                        <Typography variant="body1">
-                                            <strong>Total Readings:</strong> {aggregatedData.cortisol.length}
-                                        </Typography>
-                                    </Grid>
-                                )}
-                                {aggregatedData.glucose.length > 0 && (
-                                    <Grid item xs={12} md={6}>
-                                        <Typography variant="h6" color="primary" gutterBottom>Glucose (mg/dL)</Typography>
-                                        <Typography variant="body1">
-                                            <strong>Mean:</strong> {(aggregatedData.glucose.reduce((a, b) => a + b, 0) / aggregatedData.glucose.length).toFixed(2)}
-                                        </Typography>
-                                        <Typography variant="body1">
-                                            <strong>Min:</strong> {Math.min(...aggregatedData.glucose).toFixed(2)}
-                                        </Typography>
-                                        <Typography variant="body1">
-                                            <strong>Max:</strong> {Math.max(...aggregatedData.glucose).toFixed(2)}
-                                        </Typography>
-                                        <Typography variant="body1">
-                                            <strong>Total Readings:</strong> {aggregatedData.glucose.length}
-                                        </Typography>
-                                    </Grid>
-                                )}
+                                </Grid>
+                                <Grid item xs={12} md={3}>
+                                    <Typography variant="body2" color="text.secondary">
+                                        {comparisonMode ? 
+                                            'Compare two filtered datasets side-by-side' : 
+                                            'Showing population distribution across sensors at each time point'
+                                        }
+                                    </Typography>
+                                </Grid>
                             </Grid>
                         </Paper>
+
+                        {/* Comparison Filters */}
+                        {comparisonMode && (
+                            <Paper sx={{ p: 2, mb: 3, bgcolor: 'warning.light', borderLeft: '4px solid', borderColor: 'warning.main' }}>
+                                <Typography variant="h6" gutterBottom color="warning.dark">
+                                    Comparison Dataset Filters (Dataset 2)
+                                </Typography>
+                                <Grid container spacing={2}>
+                                    {/* Gender Filter for Comparison */}
+                                    <Grid item xs={12} md={4}>
+                                        <FormControl fullWidth size="small">
+                                            <InputLabel>Gender</InputLabel>
+                                            <Select
+                                                multiple
+                                                value={comparisonFilters.genders}
+                                                onChange={(e) => handleComparisonFilterChange('genders', e.target.value)}
+                                                input={<OutlinedInput label="Gender" />}
+                                                renderValue={(selected) => (
+                                                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                                        {selected.map((value) => (
+                                                            <Chip key={value} label={value} size="small" />
+                                                        ))}
+                                                    </Box>
+                                                )}
+                                            >
+                                                {filterOptions.genders.map((gender) => (
+                                                    <MenuItem key={gender} value={gender}>
+                                                        <Checkbox checked={comparisonFilters.genders.indexOf(gender) > -1} />
+                                                        <ListItemText primary={gender} />
+                                                    </MenuItem>
+                                                ))}
+                                            </Select>
+                                        </FormControl>
+                                    </Grid>
+                                    
+                                    {/* Age Range for Comparison */}
+                                    <Grid item xs={6} md={2}>
+                                        <TextField
+                                            fullWidth
+                                            size="small"
+                                            type="number"
+                                            label="Min Age"
+                                            value={comparisonFilters.ageMin}
+                                            onChange={(e) => handleComparisonFilterChange('ageMin', e.target.value)}
+                                            inputProps={{ min: 0, max: 150 }}
+                                        />
+                                    </Grid>
+                                    <Grid item xs={6} md={2}>
+                                        <TextField
+                                            fullWidth
+                                            size="small"
+                                            type="number"
+                                            label="Max Age"
+                                            value={comparisonFilters.ageMax}
+                                            onChange={(e) => handleComparisonFilterChange('ageMax', e.target.value)}
+                                            inputProps={{ min: 0, max: 150 }}
+                                        />
+                                    </Grid>
+
+                                    {/* Arm Filter for Comparison */}
+                                    <Grid item xs={12} md={4}>
+                                        <FormControl fullWidth size="small">
+                                            <InputLabel>Arm</InputLabel>
+                                            <Select
+                                                multiple
+                                                value={comparisonFilters.arms}
+                                                onChange={(e) => handleComparisonFilterChange('arms', e.target.value)}
+                                                input={<OutlinedInput label="Arm" />}
+                                                renderValue={(selected) => (
+                                                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                                        {selected.map((value) => (
+                                                            <Chip key={value} label={value} size="small" />
+                                                        ))}
+                                                    </Box>
+                                                )}
+                                            >
+                                                {filterOptions.arms.map((arm) => (
+                                                    <MenuItem key={arm} value={arm}>
+                                                        <Checkbox checked={comparisonFilters.arms.indexOf(arm) > -1} />
+                                                        <ListItemText primary={arm} />
+                                                    </MenuItem>
+                                                ))}
+                                            </Select>
+                                        </FormControl>
+                                    </Grid>
+                                </Grid>
+                                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                                    Note: Dataset 1 uses the main filters above. Dataset 2 uses these comparison filters.
+                                </Typography>
+                            </Paper>
+                        )}
+
+                        {/* Time Series Violin Plot */}
+                        {timeSeriesPlotResult && timeSeriesPlotResult.plotData.length > 0 ? (
+                            <Paper sx={{ p: 2, mb: 3 }}>
+                                <Plot
+                                    data={timeSeriesPlotResult.plotData}
+                                    layout={timeSeriesPlotLayout}
+                                    config={timeSeriesPlotConfig}
+                                    useResizeHandler={false}
+                                    style={{ width: '100%', height: '650px' }}
+                                />
+                            </Paper>
+                        ) : (
+                            <Paper sx={{ p: 4, textAlign: 'center', mb: 3 }}>
+                                <Typography variant="h6" color="text.secondary">
+                                    No sufficient data available for time series violin plot visualization
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                                    Each time point needs multiple sensor readings across the population to create meaningful violin plots.
+                                </Typography>
+                            </Paper>
+                        )}
+
+                        {/* Time Series Summary Statistics */}
+                        {(() => {
+                            const summary = getTimeSeriesDataSummary();
+                            return summary && (
+                                <Paper sx={{ p: 3, bgcolor: 'background.default' }}>
+                                    <Typography variant="h6" gutterBottom color="primary">
+                                        Population Time Series Analysis Summary
+                                    </Typography>
+                                    
+                                    {comparisonMode && summary.comparison ? (
+                                        <>
+                                            {/* Dataset 1 Summary */}
+                                            <Typography variant="subtitle1" gutterBottom color="primary" sx={{ mt: 2 }}>
+                                                Dataset 1 (Main Filters)
+                                            </Typography>
+                                            <Grid container spacing={3} sx={{ mb: 3 }}>
+                                                <Grid item xs={6} md={3}>
+                                                    <Typography variant="body2" color="text.secondary">
+                                                        Time Points:
+                                                    </Typography>
+                                                    <Typography variant="h6">
+                                                        {summary.main.totalTimePoints}
+                                                    </Typography>
+                                                </Grid>
+                                                <Grid item xs={6} md={3}>
+                                                    <Typography variant="body2" color="text.secondary">
+                                                        Total Readings:
+                                                    </Typography>
+                                                    <Typography variant="h6">
+                                                        {summary.main.totalReadings}
+                                                    </Typography>
+                                                </Grid>
+                                                <Grid item xs={6} md={3}>
+                                                    <Typography variant="body2" color="text.secondary">
+                                                        Avg per Time:
+                                                    </Typography>
+                                                    <Typography variant="h6">
+                                                        {summary.main.avgReadingsPerTime}
+                                                    </Typography>
+                                                </Grid>
+                                                <Grid item xs={6} md={3}>
+                                                    <Typography variant="body2" color="text.secondary">
+                                                        Violin Plots:
+                                                    </Typography>
+                                                    <Typography variant="h6">
+                                                        {summary.main.timePointsWithMultipleReadings}
+                                                    </Typography>
+                                                </Grid>
+                                            </Grid>
+                                            
+                                            <Divider sx={{ my: 2 }} />
+                                            
+                                            {/* Dataset 2 Summary */}
+                                            <Typography variant="subtitle1" gutterBottom color="warning.dark">
+                                                Dataset 2 (Comparison Filters)
+                                            </Typography>
+                                            <Grid container spacing={3}>
+                                                <Grid item xs={6} md={3}>
+                                                    <Typography variant="body2" color="text.secondary">
+                                                        Time Points:
+                                                    </Typography>
+                                                    <Typography variant="h6">
+                                                        {summary.comparison.totalTimePoints}
+                                                    </Typography>
+                                                </Grid>
+                                                <Grid item xs={6} md={3}>
+                                                    <Typography variant="body2" color="text.secondary">
+                                                        Total Readings:
+                                                    </Typography>
+                                                    <Typography variant="h6">
+                                                        {summary.comparison.totalReadings}
+                                                    </Typography>
+                                                </Grid>
+                                                <Grid item xs={6} md={3}>
+                                                    <Typography variant="body2" color="text.secondary">
+                                                        Avg per Time:
+                                                    </Typography>
+                                                    <Typography variant="h6">
+                                                        {summary.comparison.avgReadingsPerTime}
+                                                    </Typography>
+                                                </Grid>
+                                                <Grid item xs={6} md={3}>
+                                                    <Typography variant="body2" color="text.secondary">
+                                                        Violin Plots:
+                                                    </Typography>
+                                                    <Typography variant="h6">
+                                                        {summary.comparison.timePointsWithMultipleReadings}
+                                                    </Typography>
+                                                </Grid>
+                                            </Grid>
+                                        </>
+                                    ) : (
+                                        <Grid container spacing={3}>
+                                            <Grid item xs={12} md={3}>
+                                                <Typography variant="body2" color="text.secondary">
+                                                    Total Time Points:
+                                                </Typography>
+                                                <Typography variant="h6">
+                                                    {summary.main.totalTimePoints}
+                                                </Typography>
+                                            </Grid>
+                                            <Grid item xs={12} md={3}>
+                                                <Typography variant="body2" color="text.secondary">
+                                                    Total Population Readings:
+                                                </Typography>
+                                                <Typography variant="h6">
+                                                    {summary.main.totalReadings}
+                                                </Typography>
+                                            </Grid>
+                                            <Grid item xs={12} md={3}>
+                                                <Typography variant="body2" color="text.secondary">
+                                                    Avg Readings per Time:
+                                                </Typography>
+                                                <Typography variant="h6">
+                                                    {summary.main.avgReadingsPerTime}
+                                                </Typography>
+                                            </Grid>
+                                            <Grid item xs={12} md={3}>
+                                                <Typography variant="body2" color="text.secondary">
+                                                    Violin Plots (≥2 readings):
+                                                </Typography>
+                                                <Typography variant="h6">
+                                                    {summary.main.timePointsWithMultipleReadings}
+                                                </Typography>
+                                            </Grid>
+                                        </Grid>
+                                    )}
+                                    
+                                    <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+                                        {comparisonMode ? 
+                                            'Each violin shows the distribution comparison between two filtered population datasets at specific time points.' :
+                                            `Each violin shows the population distribution of ${selectedBiomarker} readings from all users and sensors at a specific time point.`
+                                        } Single readings are shown as scatter points.
+                                    </Typography>
+                                </Paper>
+                            );
+                        })()}
                     </>
                 ) : (
                     <Paper sx={{ p: 4, mt: 2 }}>
