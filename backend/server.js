@@ -1,8 +1,11 @@
+//Jagadeep Kalluri
+//server.js: backend server for the s3-mongodb-app
+
 const express = require('express');
 const { MongoClient, ObjectId } = require('mongodb');
-const cors = require('cors');
-const jwt = require('jsonwebtoken');
-const { Parser } = require('json2csv');
+const cors = require('cors'); //lets the backend communicate with the frontend
+const jwt = require('jsonwebtoken'); //used to verify the token
+const { Parser } = require('json2csv'); //used to convert the data to csv
 
 const app = express();
 const port = 3000;

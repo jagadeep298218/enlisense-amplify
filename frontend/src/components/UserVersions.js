@@ -246,11 +246,6 @@ const UserVersions = () => {
             return [];
         }
         
-        // Debug: Log the first data point to understand the structure
-        if (dataPoints.length > 0) {
-            console.log('First sensor data point:', dataPoints[0]);
-        }
-        
         return dataPoints.map((point, index) => {
             let timestamp;
             let dateTime;
@@ -304,8 +299,7 @@ const UserVersions = () => {
                 cortisol1: cortisol1 !== null && cortisol1 !== undefined && !isNaN(cortisol1) ? Number(cortisol1).toFixed(3) : null,
                 glucose1: glucose1 !== null && glucose1 !== undefined && !isNaN(glucose1) ? Number(glucose1).toFixed(2) : null,
                 cortisol2: cortisol2 !== null && cortisol2 !== undefined && !isNaN(cortisol2) ? Number(cortisol2).toFixed(3) : null,
-                glucose2: glucose2 !== null && glucose2 !== undefined && !isNaN(glucose2) ? Number(glucose2).toFixed(2) : null,
-                status: (cortisol1 || cortisol2 || glucose1 || glucose2) ? 'Valid' : 'No Data'
+                glucose2: glucose2 !== null && glucose2 !== undefined && !isNaN(glucose2) ? Number(glucose2).toFixed(2) : null
             };
         }).sort((a, b) => a.timestamp - b.timestamp);
     };
@@ -333,7 +327,7 @@ const UserVersions = () => {
                         <ArrowBackIcon />
                     </IconButton>
                     <Typography variant="h6" sx={{ ml: 2 }}>
-                        {versionId ? `Version Data - ${username}` : `Patient Data Versions - ${username}`}
+                        {versionId ? `Version Data - ${username}` : `Patient Data - ${username}`}
                     </Typography>
                 </Toolbar>
             </AppBar>
@@ -618,15 +612,15 @@ const UserVersions = () => {
                                             },
                                             {
                                                 field: 'cortisol1',
-                                                headerName: 'Cortisol Sensor 1',
-                                                width: 150,
+                                                headerName: 'Cortisol (ng/mL) - Sensor 1',
+                                                width: 180,
                                                 type: 'number',
                                                 renderCell: (params) => (
                                                     params.value ? (
                                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                                             <BloodtypeIcon color="primary" fontSize="small" />
-                                                            <Typography variant="body2" fontWeight="medium">
-                                                                {params.value} ng/mL
+                                                            <Typography variant="body2" fontWeight="medium" color="primary">
+                                                                {params.value}
                                                             </Typography>
                                                         </Box>
                                                     ) : (
@@ -638,15 +632,16 @@ const UserVersions = () => {
                                             },
                                             {
                                                 field: 'cortisol2',
-                                                headerName: 'Cortisol Sensor 2',
-                                                width: 150,
+                                                headerName: 'Cortisol (ng/mL) - Sensor 2',
+                                                width: 180,
                                                 type: 'number',
+                                                color: 'primary',
                                                 renderCell: (params) => (
                                                     params.value ? (
                                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                                             <BloodtypeIcon color="secondary" fontSize="small" />
-                                                            <Typography variant="body2" fontWeight="medium">
-                                                                {params.value} ng/mL
+                                                            <Typography  color="primary" variant="body2" fontWeight="medium">
+                                                                {params.value}
                                                             </Typography>
                                                         </Box>
                                                     ) : (
@@ -658,15 +653,15 @@ const UserVersions = () => {
                                             },
                                             {
                                                 field: 'glucose1',
-                                                headerName: 'Glucose Sensor 1',
-                                                width: 150,
+                                                headerName: 'Glucose (mg/dL) - Sensor 1',
+                                                width: 180,
                                                 type: 'number',
                                                 renderCell: (params) => (
                                                     params.value ? (
                                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                                             <ScienceIcon color="success" fontSize="small" />
-                                                            <Typography variant="body2" fontWeight="medium">
-                                                                {params.value} mg/dL
+                                                            <Typography variant="body2" fontWeight="medium" color="primary">
+                                                                {params.value}
                                                             </Typography>
                                                         </Box>
                                                     ) : (
@@ -678,15 +673,15 @@ const UserVersions = () => {
                                             },
                                             {
                                                 field: 'glucose2',
-                                                headerName: 'Glucose Sensor 2',
-                                                width: 150,
+                                                headerName: 'Glucose (mg/dL) - Sensor 2',
+                                                width: 180,
                                                 type: 'number',
                                                 renderCell: (params) => (
                                                     params.value ? (
                                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                                             <ScienceIcon color="warning" fontSize="small" />
-                                                            <Typography variant="body2" fontWeight="medium">
-                                                                {params.value} mg/dL
+                                                            <Typography variant="body2" fontWeight="medium" color="primary">
+                                                                {params.value}
                                                             </Typography>
                                                         </Box>
                                                     ) : (
@@ -694,19 +689,6 @@ const UserVersions = () => {
                                                             No Data
                                                         </Typography>
                                                     )
-                                                )
-                                            },
-                                            {
-                                                field: 'status',
-                                                headerName: 'Status',
-                                                width: 120,
-                                                renderCell: (params) => (
-                                                    <Chip 
-                                                        label={params.value}
-                                                        size="small"
-                                                        color={params.value === 'Valid' ? 'success' : 'default'}
-                                                        variant={params.value === 'Valid' ? 'filled' : 'outlined'}
-                                                    />
                                                 )
                                             }
                                         ]}
