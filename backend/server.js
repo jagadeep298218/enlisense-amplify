@@ -394,6 +394,334 @@ app.get('/filetracker/download-csv', authenticateToken, async (req, res) => {
     }
 });
 
+// Helper function to get users accessible to the current user
+async function getAccessibleUsers(user) {
+    try {
+        const db = client.db('s3-mongodb-db');
+        const fileTrackerCollection = db.collection('s3-mongodb-file_tracker');
+        
+        if (user.admin) {
+            // Admin can access all users
+            const allUsers = await fileTrackerCollection.distinct('username');
+            return allUsers;
+        } else if (user.doctor) {
+            // Doctor can access patients assigned to them
+            return user.patients || [];
+        } else {
+            // Regular user can only access their own data
+            return [user.username];
+        }
+    } catch (error) {
+        console.error('Error getting accessible users:', error);
+        return [];
+    }
+}
+
+// GET /aggregated-data/filter-options
+// Returns available filter options (unique values for dropdowns)
+app.get('/aggregated-data/filter-options', authenticateToken, async (req, res) => {
+    try {
+        // Get all users this user has access to
+        const accessibleUsers = await getAccessibleUsers(req.user);
+        
+        if (accessibleUsers.length === 0) {
+            return res.json({
+                userIDs: [],
+                deviceIDs: [],
+                genders: [],
+                arms: [],
+                totalUsers: 0
+            });
+        }
+
+        const db = client.db('s3-mongodb-db');
+        const fileTrackerCollection = db.collection('s3-mongodb-file_tracker');
+        
+        // Aggregate unique filter values from all accessible user data
+        const pipeline = [
+            {
+                $match: {
+                    username: { $in: accessibleUsers }
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    userIDs: { $addToSet: "$device_info.userID" },
+                    deviceIDs: { $addToSet: "$device_info.deviceID" },
+                    genders: { $addToSet: "$device_info.gender" },
+                    arms: { $addToSet: "$device_info.arm" },
+                    totalUsers: { $sum: 1 }
+                }
+            }
+        ];
+        
+        const result = await fileTrackerCollection.aggregate(pipeline).toArray();
+        
+        if (result.length === 0) {
+            return res.json({
+                userIDs: [],
+                deviceIDs: [],
+                genders: [],
+                arms: [],
+                totalUsers: 0
+            });
+        }
+        
+        const options = result[0];
+        
+        res.json({
+            userIDs: (options.userIDs || []).filter(Boolean).sort(),
+            deviceIDs: (options.deviceIDs || []).filter(Boolean).sort(),
+            genders: (options.genders || []).filter(Boolean).sort(),
+            arms: (options.arms || []).filter(Boolean).sort(),
+            totalUsers: options.totalUsers || 0
+        });
+        
+    } catch (error) {
+        console.error('Error fetching filter options:', error);
+        res.status(500).json({ error: 'Failed to fetch filter options' });
+    }
+});
+
+// GET /aggregated-data/filtered
+// Returns filtered sensor data based on query parameters
+app.get('/aggregated-data/filtered', authenticateToken, async (req, res) => {
+    try {
+        console.log('=== DEBUG: Starting filtered data request ===');
+        console.log('User:', req.user.username, 'Admin:', req.user.admin, 'Patients:', req.user.patients);
+        console.log('Query params:', req.query);
+        
+        // Get users accessible to this user (using same logic as filetracker endpoint)
+        const allData = await getFileTrackerData();
+        let filteredUsers;
+
+        if (req.user.admin) {
+            // Admins can see all data except their own profile
+            filteredUsers = allData.filter(entry => entry.username !== req.user.username);
+        } else if (req.user.doctor) {
+            // Doctors can see their patients' data but not their own profile
+            filteredUsers = allData.filter(entry => 
+                entry.username !== req.user.username && 
+                req.user.patients.includes(entry.username)
+            );
+        } else {
+            // Patients can only see their own data
+            filteredUsers = allData.filter(entry => 
+                entry.username === req.user.username
+            );
+        }
+        
+        console.log('Accessible users count:', filteredUsers.length);
+        
+        if (filteredUsers.length === 0) {
+            return res.json({
+                data: [],
+                uniqueUsers: 0,
+                totalRecords: 0
+            });
+        }
+
+        // Parse query parameters for filtering
+        const {
+            userIDs,
+            deviceIDs,
+            genders,
+            ageMin,
+            ageMax,
+            arms,
+            startDate,
+            endDate
+        } = req.query;
+        
+        // Apply device info filters to users
+        let usersAfterFiltering = filteredUsers;
+        
+        if (userIDs) {
+            const userIDArray = userIDs.split(',');
+            usersAfterFiltering = usersAfterFiltering.filter(user => 
+                user.device_info && userIDArray.includes(user.device_info.userID)
+            );
+        }
+        
+        if (deviceIDs) {
+            const deviceIDArray = deviceIDs.split(',');
+            usersAfterFiltering = usersAfterFiltering.filter(user => 
+                user.device_info && deviceIDArray.includes(user.device_info.deviceID)
+            );
+        }
+        
+        if (genders) {
+            const genderArray = genders.split(',');
+            usersAfterFiltering = usersAfterFiltering.filter(user => 
+                user.device_info && genderArray.includes(user.device_info.gender)
+            );
+        }
+        
+        if (arms) {
+            const armArray = arms.split(',');
+            usersAfterFiltering = usersAfterFiltering.filter(user => 
+                user.device_info && armArray.includes(user.device_info.arm)
+            );
+        }
+        
+        if (ageMin || ageMax) {
+            usersAfterFiltering = usersAfterFiltering.filter(user => {
+                if (!user.device_info || !user.device_info.age) return false;
+                
+                const age = typeof user.device_info.age === 'object' ? 
+                    user.device_info.age.$numberInt : user.device_info.age;
+                const ageNum = parseInt(age);
+                
+                if (isNaN(ageNum)) return false;
+                
+                const minAge = ageMin ? parseInt(ageMin) : 0;
+                const maxAge = ageMax ? parseInt(ageMax) : 999;
+                
+                return ageNum >= minAge && ageNum <= maxAge;
+            });
+        }
+        
+        console.log('Users after filtering:', usersAfterFiltering.length);
+        
+        // Now get sensor data for each filtered user
+        const db = client.db('s3-mongodb-db');
+        const dataCollection = db.collection('s3-mongodb-data-entries');
+        
+        const allSensorData = [];
+        
+        for (const userInfo of usersAfterFiltering) {
+            try {
+                if (userInfo.etag) {
+                    console.log('Fetching sensor data for etag:', userInfo.etag);
+                    const sensorDataResponse = await dataCollection.findOne({ etag: userInfo.etag });
+                    
+                    if (sensorDataResponse) {
+                        // Extract data points (handle both data structures)
+                        let dataPoints = [];
+                        if (sensorDataResponse.data && sensorDataResponse.data.data_points) {
+                            dataPoints = sensorDataResponse.data.data_points;
+                        } else if (sensorDataResponse.data_snapshot && sensorDataResponse.data_snapshot.data_points) {
+                            dataPoints = sensorDataResponse.data_snapshot.data_points;
+                        }
+                        
+                        console.log(`Found ${dataPoints.length} data points for user ${userInfo.username}`);
+                        
+                        // Process each data point
+                        dataPoints.forEach(point => {
+                            // Parse timestamp
+                            let timestamp;
+                            try {
+                                if (point.timestamp && point.timestamp.$date && point.timestamp.$date.$numberLong) {
+                                    timestamp = new Date(parseInt(point.timestamp.$date.$numberLong));
+                                } else if (point.timestamp && point.timestamp.$date) {
+                                    timestamp = new Date(point.timestamp.$date);
+                                } else if (point.timestamp) {
+                                    timestamp = new Date(point.timestamp);
+                                } else if (point.time) {
+                                    const timeValue = point.time.$numberInt || point.time;
+                                    timestamp = new Date(parseInt(timeValue) * 1000);
+                                } else {
+                                    timestamp = new Date();
+                                }
+                            } catch (error) {
+                                timestamp = new Date();
+                            }
+                            
+                            // Apply date range filter
+                            if (startDate || endDate) {
+                                const startDateTime = startDate ? new Date(startDate) : new Date('1900-01-01');
+                                const endDateTime = endDate ? new Date(endDate + 'T23:59:59') : new Date('2099-12-31');
+                                
+                                if (timestamp < startDateTime || timestamp > endDateTime) {
+                                    return; // Skip this data point
+                                }
+                            }
+
+                            // Extract sensor values and create data entries
+                            const baseEntry = {
+                                username: userInfo.username,
+                                userID: userInfo.device_info ? userInfo.device_info.userID : null,
+                                deviceID: userInfo.device_info ? userInfo.device_info.deviceID : null,
+                                gender: userInfo.device_info ? userInfo.device_info.gender : null,
+                                age: userInfo.device_info ? (userInfo.device_info.age.$numberInt || userInfo.device_info.age) : null,
+                                arm: userInfo.device_info ? userInfo.device_info.arm : null,
+                                timestamp: timestamp
+                            };
+
+                            // Add cortisol readings
+                            const cortisol1 = point['Cortisol(ng/mL)'] && (point['Cortisol(ng/mL)'].$numberDouble || point['Cortisol(ng/mL)']);
+                            const cortisol2 = point['Cortisol(ng/mL)_2'] && (point['Cortisol(ng/mL)_2'].$numberDouble || point['Cortisol(ng/mL)_2']);
+                            
+                            if (cortisol1 !== null && cortisol1 !== undefined && !isNaN(cortisol1)) {
+                                allSensorData.push({
+                                    ...baseEntry,
+                                    biomarkerType: 'cortisol',
+                                    value: parseFloat(cortisol1),
+                                    sensor: 1
+                                });
+                            }
+                            if (cortisol2 !== null && cortisol2 !== undefined && !isNaN(cortisol2)) {
+                                allSensorData.push({
+                                    ...baseEntry,
+                                    biomarkerType: 'cortisol',
+                                    value: parseFloat(cortisol2),
+                                    sensor: 2
+                                });
+                            }
+
+                            // Add glucose readings
+                            const glucose1 = point['Glucose(mg/dL)'] && (point['Glucose(mg/dL)'].$numberDouble || point['Glucose(mg/dL)']);
+                            const glucose2 = point['Glucose(mg/dL)_2'] && (point['Glucose(mg/dL)_2'].$numberDouble || point['Glucose(mg/dL)_2']);
+                            
+                            if (glucose1 !== null && glucose1 !== undefined && !isNaN(glucose1)) {
+                                allSensorData.push({
+                                    ...baseEntry,
+                                    biomarkerType: 'glucose',
+                                    value: parseFloat(glucose1),
+                                    sensor: 1
+                                });
+                            }
+                            if (glucose2 !== null && glucose2 !== undefined && !isNaN(glucose2)) {
+                                allSensorData.push({
+                                    ...baseEntry,
+                                    biomarkerType: 'glucose',
+                                    value: parseFloat(glucose2),
+                                    sensor: 2
+                                });
+                            }
+                        });
+                    }
+                }
+            } catch (userError) {
+                console.warn(`Could not fetch data for user ${userInfo.username}:`, userError.message);
+            }
+        }
+        
+        // Sort by timestamp
+        allSensorData.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        
+        // Count unique users in final data
+        const uniqueUsers = new Set(allSensorData.map(item => item.username)).size;
+        
+        console.log('=== Final Results ===');
+        console.log('Total sensor data points:', allSensorData.length);
+        console.log('Unique users:', uniqueUsers);
+        
+        res.json({
+            data: allSensorData,
+            uniqueUsers: uniqueUsers,
+            totalRecords: allSensorData.length
+        });
+        
+    } catch (error) {
+        console.error('=== ERROR in filtered data endpoint ===');
+        console.error('Error details:', error);
+        console.error('Stack trace:', error.stack);
+        res.status(500).json({ error: 'Failed to fetch filtered data' });
+    }
+});
+
 
 // Connect to MongoDB when starting the server
 app.listen(port, async () => {

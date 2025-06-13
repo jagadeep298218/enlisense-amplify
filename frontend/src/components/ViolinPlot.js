@@ -1218,9 +1218,82 @@ const ViolinPlot = ({ sensorData, title = "Time Series Violin Plot Analysis" }) 
         );
     }
 
-    const timeSeriesPlotLayout = {
+    const plotLayout = graphType === 'compare' ? {
         title: {
-            text: `Biomarker Distribution Analysis - ${selectedBiomarker.charAt(0).toUpperCase() + selectedBiomarker.slice(1)}`,
+            text: `Cortisol vs Glucose Violin Plot Comparison Over Time${showMovingAverage ? ` (with ${movingAverageWindow}-point Moving Average)` : ''}`,
+            font: { size: 20 }
+        },
+        xaxis: {
+            title: 'Time Points',
+            titlefont: { size: 14 },
+            tickangle: -45,
+            type: 'category'
+        },
+        yaxis: {
+            title: 'Cortisol (ng/mL)',
+            titlefont: { size: 14, color: 'rgb(136, 132, 216)' },
+            tickfont: { color: 'rgb(136, 132, 216)' },
+            zeroline: false,
+            side: 'left'
+        },
+        yaxis2: {
+            title: 'Glucose (mg/dL)',
+            titlefont: { size: 14, color: 'rgb(130, 202, 157)' },
+            tickfont: { color: 'rgb(130, 202, 157)' },
+            zeroline: false,
+            side: 'right',
+            overlaying: 'y'
+        },
+        showlegend: false,
+        margin: { t: 80, b: 100, l: 80, r: 80 },
+        height: 600,
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        violinmode: 'group',
+        violingap: 0.1,
+        violingroupgap: 0.1
+    } : graphType === 'auc' ? {
+        title: {
+            text: `ROC Curve Analysis`,
+            font: { size: 20 }
+        },
+        xaxis: {
+            title: 'False Positive Rate (1 - Specificity)',
+            range: [0, 1],
+            showgrid: true,
+            gridcolor: 'rgba(128,128,128,0.2)'
+        },
+        yaxis: {
+            title: 'True Positive Rate (Sensitivity)',
+            range: [0, 1],
+            showgrid: true,
+            gridcolor: 'rgba(128,128,128,0.2)'
+        },
+        showlegend: true,
+        legend: {
+            x: 0.6,
+            y: 0.2,
+            bgcolor: 'rgba(255,255,255,0.8)',
+            bordercolor: 'rgba(0,0,0,0.2)',
+            borderwidth: 1
+        },
+        margin: { t: 80, b: 100, l: 80, r: 80 },
+        height: 600,
+        plot_bgcolor: 'white',
+        paper_bgcolor: 'white',
+        shapes: [{
+            type: 'line',
+            x0: 0, y0: 0,
+            x1: 1, y1: 1,
+            line: {
+                color: 'rgba(128,128,128,0.3)',
+                width: 1,
+                dash: 'dot'
+            }
+        }]
+    } : {
+        title: {
+            text: `${selectedBiomarker.charAt(0).toUpperCase() + selectedBiomarker.slice(1)} Distribution Over Time${showMovingAverage ? ` (with ${movingAverageWindow}-point Moving Average)` : ''}`,
             font: { size: 20 }
         },
         xaxis: {
@@ -1234,12 +1307,7 @@ const ViolinPlot = ({ sensorData, title = "Time Series Violin Plot Analysis" }) 
             titlefont: { size: 14 },
             zeroline: false
         },
-        showlegend: true,
-        legend: {
-            x: 0,
-            y: 1.1,
-            orientation: 'h'
-        },
+        showlegend: false,
         margin: { t: 80, b: 100, l: 80, r: 50 },
         height: 600,
         plot_bgcolor: 'rgba(0,0,0,0)',
@@ -1247,58 +1315,6 @@ const ViolinPlot = ({ sensorData, title = "Time Series Violin Plot Analysis" }) 
         violinmode: 'group',
         violingap: 0.3,
         violingroupgap: 0.3
-    };
-
-    const rocPlotLayout = {
-        title: {
-            text: 'Receiver Operating Characteristic (ROC) Curve',
-            font: { size: 20 }
-        },
-        xaxis: {
-            title: 'False Positive Rate',
-            titlefont: { size: 14 },
-            range: [0, 1]
-        },
-        yaxis: {
-            title: 'True Positive Rate',
-            titlefont: { size: 14 },
-            range: [0, 1]
-        },
-        showlegend: true,
-        legend: {
-            x: 0,
-            y: 1.1,
-            orientation: 'h'
-        },
-        margin: { t: 80, b: 80, l: 80, r: 50 },
-        height: 500,
-        plot_bgcolor: 'rgba(0,0,0,0)',
-        paper_bgcolor: 'rgba(0,0,0,0)'
-    };
-
-    const aucPlotLayout = {
-        title: {
-            text: 'Area Under the Curve (AUC) Analysis',
-            font: { size: 20 }
-        },
-        xaxis: {
-            title: 'Time Points',
-            titlefont: { size: 14 }
-        },
-        yaxis: {
-            title: selectedBiomarker === 'cortisol' ? 'Cortisol (ng/mL)' : 'Glucose (mg/dL)',
-            titlefont: { size: 14 }
-        },
-        showlegend: true,
-        legend: {
-            x: 0,
-            y: 1.1,
-            orientation: 'h'
-        },
-        margin: { t: 80, b: 80, l: 80, r: 50 },
-        height: 500,
-        plot_bgcolor: 'rgba(0,0,0,0)',
-        paper_bgcolor: 'rgba(0,0,0,0)'
     };
 
     const plotConfig = {
@@ -1487,7 +1503,7 @@ const ViolinPlot = ({ sensorData, title = "Time Series Violin Plot Analysis" }) 
             <Paper sx={{ p: 2, mb: 3 }}>
                 <Plot
                     data={plotResult.plotData}
-                    layout={timeSeriesPlotLayout}
+                    layout={plotLayout}
                     config={plotConfig}
                     useResizeHandler={false}
                     style={{ width: '100%', height: '650px' }}

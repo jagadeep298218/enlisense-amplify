@@ -42,7 +42,8 @@ const AggregatedViolinPlots = () => {
         cortisol: [],
         glucose: []
     });
-    const [allUsersData, setAllUsersData] = useState([]);
+    const [filteredData, setFilteredData] = useState([]);
+    const [plotData, setPlotData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [userCount, setUserCount] = useState(0);
@@ -67,6 +68,14 @@ const AggregatedViolinPlots = () => {
         endDate: ''
     });
     
+    // Local state for age inputs (to avoid API calls on every keystroke)
+    const [localAgeInputs, setLocalAgeInputs] = useState({
+        ageMin: '',
+        ageMax: ''
+    });
+    
+
+    
     // Available filter options (populated from data)
     const [filterOptions, setFilterOptions] = useState({
         userIDs: [],
@@ -85,14 +94,21 @@ const AggregatedViolinPlots = () => {
     }, []);
 
     useEffect(() => {
-        fetchAllUsersData();
+        fetchFilterOptions();
     }, [navigate]);
 
+    // Trigger server-side filtering when filters change
     useEffect(() => {
-        applyFiltersAndAggregate();
-    }, [filters, allUsersData]);
+        fetchFilteredData();
+    }, [filters]);
 
-    const fetchAllUsersData = async () => {
+    // Update plot data when filteredData, graphType, or other plot parameters change
+    useEffect(() => {
+        updatePlotData();
+    }, [filteredData, graphType, selectedBiomarker, maxTimePoints, showMovingAverage, movingAverageWindow]);
+
+    // Separate function to fetch available filter options
+    const fetchFilterOptions = async () => {
         try {
             const token = localStorage.getItem('token');
             if (!token) {
@@ -100,220 +116,115 @@ const AggregatedViolinPlots = () => {
                 return;
             }
 
-            // Get all users the current user has access to
-            const fileTrackerResponse = await axios.get('http://localhost:3000/filetracker', {
+            // Get filter options from server
+            const response = await axios.get('http://localhost:3000/aggregated-data/filter-options', {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
 
-            const users = fileTrackerResponse.data;
-            setUserCount(users.length);
-
-            if (users.length === 0) {
-                setLoading(false);
-                return;
-            }
-
-            // Collect all data from all accessible users
-            const allData = [];
-            const uniqueUserIDs = new Set();
-            const uniqueDeviceIDs = new Set();
-            const uniqueGenders = new Set();
-            const uniqueArms = new Set();
-
-            for (const userInfo of users) {
-                try {
-                    if (userInfo.etag) {
-                        const sensorDataResponse = await axios.get(`http://localhost:3000/user-sensor-data/${userInfo.etag}`, {
-                            headers: { 'Authorization': `Bearer ${token}` }
-                        });
-
-                        const sensorData = sensorDataResponse.data;
-                        let dataPoints = [];
-
-                        if (sensorData?.data?.data_points) {
-                            dataPoints = sensorData.data.data_points;
-                        } else if (sensorData?.data_snapshot?.data_points) {
-                            dataPoints = sensorData.data_snapshot.data_points;
-                        }
-
-                        // Get device info for this user
-                        const deviceInfo = userInfo.device_info || {};
-                        
-                        // Add to filter options
-                        if (deviceInfo.userID) uniqueUserIDs.add(deviceInfo.userID);
-                        if (deviceInfo.deviceID) uniqueDeviceIDs.add(deviceInfo.deviceID);
-                        if (deviceInfo.gender) uniqueGenders.add(deviceInfo.gender);
-                        if (deviceInfo.arm) uniqueArms.add(deviceInfo.arm);
-
-                        // Process each data point
-                        dataPoints.forEach(point => {
-                            // Parse timestamp
-                            let timestamp;
-                            try {
-                                if (point.timestamp?.$date?.$numberLong) {
-                                    timestamp = new Date(parseInt(point.timestamp.$date.$numberLong));
-                                } else if (point.timestamp?.$date) {
-                                    timestamp = new Date(point.timestamp.$date);
-                                } else if (point.timestamp) {
-                                    timestamp = new Date(point.timestamp);
-                                } else if (point.time) {
-                                    const timeValue = point.time?.$numberInt || point.time;
-                                    timestamp = new Date(parseInt(timeValue) * 1000);
-                                } else {
-                                    timestamp = new Date();
-                                }
-                            } catch (error) {
-                                timestamp = new Date();
-                            }
-
-                            // Extract sensor values
-                            const cortisol1 = point['Cortisol(ng/mL)']?.$numberDouble || point['Cortisol(ng/mL)'];
-                            const cortisol2 = point['Cortisol(ng/mL)_2']?.$numberDouble || point['Cortisol(ng/mL)_2'];
-                            const glucose1 = point['Glucose(mg/dL)']?.$numberDouble || point['Glucose(mg/dL)'];
-                            const glucose2 = point['Glucose(mg/dL)_2']?.$numberDouble || point['Glucose(mg/dL)_2'];
-
-                            // Create data entries
-                            const baseEntry = {
-                                username: userInfo.username,
-                                userID: deviceInfo.userID,
-                                deviceID: deviceInfo.deviceID,
-                                gender: deviceInfo.gender,
-                                age: deviceInfo.age?.$numberInt || deviceInfo.age,
-                                arm: deviceInfo.arm,
-                                timestamp: timestamp,
-                                rawPoint: point
-                            };
-
-                            // Add cortisol readings
-                            if (cortisol1 !== null && cortisol1 !== undefined && !isNaN(cortisol1)) {
-                                allData.push({
-                                    ...baseEntry,
-                                    biomarkerType: 'cortisol',
-                                    value: cortisol1,
-                                    sensor: 1
-                                });
-                            }
-                            if (cortisol2 !== null && cortisol2 !== undefined && !isNaN(cortisol2)) {
-                                allData.push({
-                                    ...baseEntry,
-                                    biomarkerType: 'cortisol',
-                                    value: cortisol2,
-                                    sensor: 2
-                                });
-                            }
-
-                            // Add glucose readings
-                            if (glucose1 !== null && glucose1 !== undefined && !isNaN(glucose1)) {
-                                allData.push({
-                                    ...baseEntry,
-                                    biomarkerType: 'glucose',
-                                    value: glucose1,
-                                    sensor: 1
-                                });
-                            }
-                            if (glucose2 !== null && glucose2 !== undefined && !isNaN(glucose2)) {
-                                allData.push({
-                                    ...baseEntry,
-                                    biomarkerType: 'glucose',
-                                    value: glucose2,
-                                    sensor: 2
-                                });
-                            }
-                        });
-                    }
-                } catch (userError) {
-                    console.warn(`Could not fetch data for user ${userInfo.username}:`, userError.message);
-                }
-            }
-
-            setAllUsersData(allData);
-            setFilterOptions({
-                userIDs: Array.from(uniqueUserIDs).sort(),
-                deviceIDs: Array.from(uniqueDeviceIDs).sort(),
-                genders: Array.from(uniqueGenders).sort(),
-                arms: Array.from(uniqueArms).sort()
-            });
-
-            setLoading(false);
+            const options = response.data;
+            setFilterOptions(options);
+            setUserCount(options.totalUsers || 0);
+            
+            // Initial data load with no filters
+            fetchFilteredData();
+            
         } catch (error) {
-            console.error('Error fetching aggregated data:', error);
-            setError('Failed to fetch aggregated sensor data: ' + (error.response?.data?.error || error.message));
+            console.error('Error fetching filter options:', error);
+            setError('Failed to fetch filter options: ' + (error.response?.data?.error || error.message));
             setLoading(false);
         }
     };
 
-    const applyFiltersAndAggregate = () => {
-        let filteredData = [...allUsersData];
+    // Fetch filtered data from server
+    const fetchFilteredData = async () => {
+        try {
+            setLoading(true);
+            const token = localStorage.getItem('token');
+            if (!token) {
+                navigate('/');
+                return;
+            }
 
-        // Apply UserID filter
-        if (filters.userIDs.length > 0) {
-            filteredData = filteredData.filter(item => 
-                filters.userIDs.includes(item.userID)
-            );
-        }
+            // Build query parameters from filters
+            const queryParams = new URLSearchParams();
+            
+            // Add array filters
+            if (filters.userIDs.length > 0) {
+                queryParams.append('userIDs', filters.userIDs.join(','));
+            }
+            if (filters.deviceIDs.length > 0) {
+                queryParams.append('deviceIDs', filters.deviceIDs.join(','));
+            }
+            if (filters.genders.length > 0) {
+                queryParams.append('genders', filters.genders.join(','));
+            }
+            if (filters.arms.length > 0) {
+                queryParams.append('arms', filters.arms.join(','));
+            }
 
-        // Apply DeviceID filter
-        if (filters.deviceIDs.length > 0) {
-            filteredData = filteredData.filter(item => 
-                filters.deviceIDs.includes(item.deviceID)
-            );
-        }
+            // Add range filters
+            if (filters.ageMin !== '') {
+                queryParams.append('ageMin', filters.ageMin);
+            }
+            if (filters.ageMax !== '') {
+                queryParams.append('ageMax', filters.ageMax);
+            }
 
-        // Apply Gender filter
-        if (filters.genders.length > 0) {
-            filteredData = filteredData.filter(item => 
-                filters.genders.includes(item.gender)
-            );
-        }
+            // Add date filters
+            if (filters.startDate !== '') {
+                queryParams.append('startDate', filters.startDate);
+            }
+            if (filters.endDate !== '') {
+                queryParams.append('endDate', filters.endDate);
+            }
 
-        // Apply Age range filter
-        if (filters.ageMin !== '' || filters.ageMax !== '') {
-            filteredData = filteredData.filter(item => {
-                const age = parseInt(item.age);
-                if (isNaN(age)) return false;
-                
-                const minAge = filters.ageMin !== '' ? parseInt(filters.ageMin) : 0;
-                const maxAge = filters.ageMax !== '' ? parseInt(filters.ageMax) : 999;
-                
-                return age >= minAge && age <= maxAge;
+            // Fetch filtered data from server
+            const response = await axios.get(`http://localhost:3000/aggregated-data/filtered?${queryParams.toString()}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
             });
-        }
 
-        // Apply Arm filter
-        if (filters.arms.length > 0) {
-            filteredData = filteredData.filter(item => 
-                filters.arms.includes(item.arm)
-            );
-        }
+            const data = response.data;
+            setFilteredData(data.data || []);
+            setFilteredUserCount(data.uniqueUsers || 0);
 
-        // Apply Date range filter
-        if (filters.startDate !== '' || filters.endDate !== '') {
-            filteredData = filteredData.filter(item => {
-                const itemDate = item.timestamp;
-                const startDate = filters.startDate !== '' ? new Date(filters.startDate) : new Date('1900-01-01');
-                const endDate = filters.endDate !== '' ? new Date(filters.endDate + 'T23:59:59') : new Date('2099-12-31');
-                
-                return itemDate >= startDate && itemDate <= endDate;
+            // Process aggregated data for the summary cards
+            const cortisolData = (data.data || [])
+                .filter(item => item.biomarkerType === 'cortisol')
+                .map(item => item.value);
+            
+            const glucoseData = (data.data || [])
+                .filter(item => item.biomarkerType === 'glucose')
+                .map(item => item.value);
+
+            setAggregatedData({
+                cortisol: cortisolData,
+                glucose: glucoseData
             });
+
+            setLoading(false);
+        } catch (error) {
+            console.error('Error fetching filtered data:', error);
+            setError('Failed to fetch filtered data: ' + (error.response?.data?.error || error.message));
+            setLoading(false);
+        }
+    };
+
+    // Update plot data
+    const updatePlotData = async () => {
+        if (!filteredData || filteredData.length === 0) {
+            setPlotData(null);
+            return;
         }
 
-        // Aggregate filtered data
-        const cortisolData = filteredData
-            .filter(item => item.biomarkerType === 'cortisol')
-            .map(item => item.value);
-        
-        const glucoseData = filteredData
-            .filter(item => item.biomarkerType === 'glucose')
-            .map(item => item.value);
-
-        // Count unique users in filtered data
-        const uniqueUsers = new Set(filteredData.map(item => item.username));
-        setFilteredUserCount(uniqueUsers.size);
-
-        setAggregatedData({
-            cortisol: cortisolData,
-            glucose: glucoseData
-        });
+        try {
+            const result = graphType === 'compare' ? 
+                await createCompareGraphData() : 
+                await createTimeSeriesViolinPlotData();
+            setPlotData(result);
+        } catch (error) {
+            console.error('Error updating plot data:', error);
+            setPlotData(null);
+        }
     };
 
     const handleFilterChange = (filterType, value) => {
@@ -322,6 +233,41 @@ const AggregatedViolinPlots = () => {
             [filterType]: value
         }));
     };
+
+
+    
+    // Handle age input changes (local state only, no API call)
+    const handleAgeInputChange = (field, value) => {
+        setLocalAgeInputs(prev => ({
+            ...prev,
+            [field]: value
+        }));
+    };
+    
+    // Handle Enter key press on age inputs (triggers API call)
+    const handleAgeInputEnter = (field, value) => {
+        setFilters(prev => ({
+            ...prev,
+            [field]: value
+        }));
+    };
+    
+    // Handle age input key press
+    const handleAgeKeyPress = (event, field, value) => {
+        if (event.key === 'Enter') {
+            handleAgeInputEnter(field, value);
+        }
+    };
+    
+    // Handle age input blur (also triggers API call when user clicks away)
+    const handleAgeInputBlur = (field, value) => {
+        // Only update if the value has actually changed
+        if (filters[field] !== value) {
+            handleAgeInputEnter(field, value);
+        }
+    };
+    
+
 
     const clearAllFilters = () => {
         setFilters({
@@ -333,6 +279,10 @@ const AggregatedViolinPlots = () => {
             arms: [],
             startDate: '',
             endDate: ''
+        });
+        setLocalAgeInputs({
+            ageMin: '',
+            ageMax: ''
         });
     };
 
@@ -358,73 +308,86 @@ const AggregatedViolinPlots = () => {
         return 'User';
     };
 
-    const applyFilters = (data, filterSet) => {
-        return data.filter(item => {
-            // Apply all filters
-            if (filterSet.userIDs.length > 0 && !filterSet.userIDs.includes(item.userID)) return false;
-            if (filterSet.deviceIDs.length > 0 && !filterSet.deviceIDs.includes(item.deviceID)) return false;
-            if (filterSet.genders.length > 0 && !filterSet.genders.includes(item.gender)) return false;
-            if (filterSet.arms.length > 0 && !filterSet.arms.includes(item.arm)) return false;
+
+
+    const prepareTimeSeriesViolinData = async () => {
+        if (!filteredData || filteredData.length === 0) return null;
+
+        const timeGroups = {};
+        
+        filteredData.forEach(item => {
+            if (item.biomarkerType !== selectedBiomarker) return;
             
-            if (filterSet.ageMin && item.age < parseInt(filterSet.ageMin)) return false;
-            if (filterSet.ageMax && item.age > parseInt(filterSet.ageMax)) return false;
+            const timestamp = item.timestamp;
+            if (!timestamp) return;
             
-            if (filterSet.startDate && item.timestamp < new Date(filterSet.startDate)) return false;
-            if (filterSet.endDate && item.timestamp > new Date(filterSet.endDate + 'T23:59:59')) return false;
+            const timeKey = new Date(timestamp).toISOString();
             
-            return true;
+            if (!timeGroups[timeKey]) {
+                timeGroups[timeKey] = {
+                    timestamp: timestamp,
+                    values: []
+                };
+            }
+            
+            timeGroups[timeKey].values.push(item.value);
         });
-    };
 
-    const prepareTimeSeriesViolinData = () => {
-        if (!allUsersData || allUsersData.length === 0) return null;
-
-        // Filter data based on current filters
-        const filteredData = applyFilters(allUsersData, filters);
-        
-        const processDataGroup = (data) => {
-            const timeGroups = {};
-            
-            data.forEach(item => {
-                if (item.biomarkerType !== selectedBiomarker) return;
-                
-                const timestamp = item.timestamp;
-                if (!timestamp) return;
-                
-                const timeKey = new Date(timestamp).toISOString();
-                
-                if (!timeGroups[timeKey]) {
-                    timeGroups[timeKey] = {
-                        timestamp: timestamp,
-                        values: []
-                    };
-                }
-                
-                timeGroups[timeKey].values.push(item.value);
-            });
-
-            return Object.values(timeGroups);
-        };
-
-        // Process main dataset
-        const mainData = processDataGroup(filteredData);
-        
         // Sort all time groups
-        const allTimeGroups = [...mainData]
+        const allTimeGroups = Object.values(timeGroups)
             .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
         // Apply time point limit (if not "All Time Points")
         const limitedTimeGroups = maxTimePoints === -1 ? allTimeGroups : allTimeGroups.slice(0, maxTimePoints);
 
-        return { 
-            main: limitedTimeGroups
-        };
+        return limitedTimeGroups;
     };
 
-    const calculateMovingAverage = (timeSeriesData, windowSize, datasetName = '') => {
+    // Prepare data for compare graph (includes both cortisol and glucose)
+    const prepareCompareGraphData = async () => {
+        if (!filteredData || filteredData.length === 0) return null;
+
+        const timeGroups = {};
+        
+        filteredData.forEach(item => {
+            // Include both cortisol and glucose for compare graph
+            if (item.biomarkerType !== 'cortisol' && item.biomarkerType !== 'glucose') return;
+            
+            const timestamp = item.timestamp;
+            if (!timestamp) return;
+            
+            const timeKey = new Date(timestamp).toISOString();
+            
+            if (!timeGroups[timeKey]) {
+                timeGroups[timeKey] = {
+                    timestamp: timestamp,
+                    values: []
+                };
+            }
+            
+            // Store the full item with biomarkerType for filtering later
+            timeGroups[timeKey].values.push({
+                value: item.value,
+                biomarkerType: item.biomarkerType
+            });
+        });
+
+        // Sort all time groups
+        const allTimeGroups = Object.values(timeGroups)
+            .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+        // Apply time point limit (if not "All Time Points")
+        const limitedTimeGroups = maxTimePoints === -1 ? allTimeGroups : allTimeGroups.slice(0, maxTimePoints);
+
+        return limitedTimeGroups;
+    };
+
+    // Calculate moving average for both biomarkers (for compare graph)
+    const calculateMovingAverageForBoth = (timeSeriesData, windowSize) => {
         if (!timeSeriesData || timeSeriesData.length === 0) return null;
         
-        const movingAverageData = [];
+        const cortisolAverage = [];
+        const glucoseAverage = [];
         const xLabels = [];
         
         timeSeriesData.forEach((timeGroup, index) => {
@@ -435,12 +398,266 @@ const AggregatedViolinPlots = () => {
             });
             xLabels.push(timeLabel);
             
-            const biomarkerData = timeGroup.values;
-            if (biomarkerData.length > 0) {
-                const mean = biomarkerData.reduce((sum, val) => sum + val, 0) / biomarkerData.length;
+            // Calculate cortisol moving average
+            const cortisolData = timeGroup.values.filter(val => val.biomarkerType === 'cortisol').map(v => v.value);
+            if (cortisolData.length > 0) {
+                const cortisolMean = cortisolData.reduce((sum, val) => sum + val, 0) / cortisolData.length;
                 let startIndex = Math.max(0, index - Math.floor(windowSize / 2));
                 let endIndex = Math.min(timeSeriesData.length - 1, index + Math.floor(windowSize / 2));
                 
+                let windowValues = [];
+                for (let i = startIndex; i <= endIndex; i++) {
+                    const windowCortisol = timeSeriesData[i].values.filter(val => val.biomarkerType === 'cortisol').map(v => v.value);
+                    if (windowCortisol.length > 0) {
+                        const windowMean = windowCortisol.reduce((sum, val) => sum + val, 0) / windowCortisol.length;
+                        windowValues.push(windowMean);
+                    }
+                }
+                
+                const movingAverage = windowValues.length > 0 ? 
+                    windowValues.reduce((sum, val) => sum + val, 0) / windowValues.length : cortisolMean;
+                cortisolAverage.push(movingAverage);
+            } else {
+                cortisolAverage.push(null);
+            }
+            
+            // Calculate glucose moving average
+            const glucoseData = timeGroup.values.filter(val => val.biomarkerType === 'glucose').map(v => v.value);
+            if (glucoseData.length > 0) {
+                const glucoseMean = glucoseData.reduce((sum, val) => sum + val, 0) / glucoseData.length;
+                let startIndex = Math.max(0, index - Math.floor(windowSize / 2));
+                let endIndex = Math.min(timeSeriesData.length - 1, index + Math.floor(windowSize / 2));
+                
+                let windowValues = [];
+                for (let i = startIndex; i <= endIndex; i++) {
+                    const windowGlucose = timeSeriesData[i].values.filter(val => val.biomarkerType === 'glucose').map(v => v.value);
+                    if (windowGlucose.length > 0) {
+                        const windowMean = windowGlucose.reduce((sum, val) => sum + val, 0) / windowGlucose.length;
+                        windowValues.push(windowMean);
+                    }
+                }
+                
+                const movingAverage = windowValues.length > 0 ? 
+                    windowValues.reduce((sum, val) => sum + val, 0) / windowValues.length : glucoseMean;
+                glucoseAverage.push(movingAverage);
+            } else {
+                glucoseAverage.push(null);
+            }
+        });
+        
+        return { cortisolAverage, glucoseAverage, xLabels };
+    };
+
+    const createCompareGraphData = async () => {
+        const timeSeriesData = await prepareCompareGraphData();
+        if (!timeSeriesData || timeSeriesData.length === 0) return null;
+
+        const plotData = [];
+        const xLabels = new Set();
+
+        // Prepare time labels
+        timeSeriesData.forEach((timeGroup) => {
+            const timeLabel = new Date(timeGroup.timestamp).toLocaleTimeString('en-US', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            xLabels.add(timeLabel);
+        });
+
+        // Create violin plots for each time point
+        timeSeriesData.forEach((timeGroup, index) => {
+            const cortisolData = timeGroup.values.filter(val => val.biomarkerType === 'cortisol').map(v => v.value);
+            const glucoseData = timeGroup.values.filter(val => val.biomarkerType === 'glucose').map(v => v.value);
+            const timeLabel = new Date(timeGroup.timestamp).toLocaleTimeString('en-US', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            
+            // Create cortisol violin plot if we have enough data points
+            if (cortisolData.length >= 2) {
+                plotData.push({
+                    type: 'violin',
+                    y: cortisolData,
+                    x: Array(cortisolData.length).fill(timeLabel),
+                    name: 'Cortisol',
+                    yaxis: 'y',
+                    box: {
+                        visible: true,
+                        width: 0.3
+                    },
+                    meanline: {
+                        visible: true
+                    },
+                    points: 'all',
+                    pointpos: 0,
+                    jitter: 0.3,
+                    fillcolor: 'rgba(136, 132, 216, 0.7)',
+                    line: {
+                        color: 'rgb(136, 132, 216)'
+                    },
+                    marker: {
+                        size: 3,
+                        color: 'rgba(136, 132, 216, 0.7)',
+                        line: {
+                            width: 0.5,
+                            color: 'rgb(136, 132, 216)'
+                        }
+                    },
+                    scalemode: 'width',
+                    width: 0.3,
+                    showlegend: index === 0,
+                    legendgroup: 'cortisol'
+                });
+            } else if (cortisolData.length === 1) {
+                // For single points, create a scatter plot
+                plotData.push({
+                    type: 'scatter',
+                    mode: 'markers',
+                    x: [timeLabel],
+                    y: cortisolData,
+                    name: 'Cortisol',
+                    yaxis: 'y',
+                    marker: {
+                        color: 'rgba(136, 132, 216, 0.7)',
+                        size: 8,
+                        line: {
+                            color: 'rgb(136, 132, 216)',
+                            width: 2
+                        }
+                    },
+                    showlegend: index === 0,
+                    legendgroup: 'cortisol'
+                });
+            }
+
+            // Create glucose violin plot if we have enough data points
+            if (glucoseData.length >= 2) {
+                plotData.push({
+                    type: 'violin',
+                    y: glucoseData,
+                    x: Array(glucoseData.length).fill(timeLabel),
+                    name: 'Glucose',
+                    yaxis: 'y2',
+                    box: {
+                        visible: true,
+                        width: 0.3
+                    },
+                    meanline: {
+                        visible: true
+                    },
+                    points: 'all',
+                    pointpos: 0,
+                    jitter: 0.3,
+                    fillcolor: 'rgba(130, 202, 157, 0.7)',
+                    line: {
+                        color: 'rgb(130, 202, 157)'
+                    },
+                    marker: {
+                        size: 3,
+                        color: 'rgba(130, 202, 157, 0.7)',
+                        line: {
+                            width: 0.5,
+                            color: 'rgb(130, 202, 157)'
+                        }
+                    },
+                    scalemode: 'width',
+                    width: 0.3,
+                    showlegend: index === 0,
+                    legendgroup: 'glucose'
+                });
+            } else if (glucoseData.length === 1) {
+                // For single points, create a scatter plot
+                plotData.push({
+                    type: 'scatter',
+                    mode: 'markers',
+                    x: [timeLabel],
+                    y: glucoseData,
+                    name: 'Glucose',
+                    yaxis: 'y2',
+                    marker: {
+                        color: 'rgba(130, 202, 157, 0.7)',
+                        size: 8,
+                        line: {
+                            color: 'rgb(130, 202, 157)',
+                            width: 2
+                        }
+                    },
+                    showlegend: index === 0,
+                    legendgroup: 'glucose'
+                });
+            }
+        });
+
+        // Add moving averages if enabled
+        if (showMovingAverage) {
+            const movingAverage = calculateMovingAverageForBoth(timeSeriesData, movingAverageWindow);
+            if (movingAverage) {
+                // Cortisol moving average
+                plotData.push({
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    x: movingAverage.xLabels,
+                    y: movingAverage.cortisolAverage.filter(val => val !== null),
+                    name: 'Cortisol MA',
+                    yaxis: 'y',
+                    line: {
+                        color: 'rgb(255, 99, 71)',
+                        width: 3
+                    },
+                    marker: {
+                        color: 'rgb(255, 99, 71)',
+                        size: 6
+                    },
+                    showlegend: false,
+                    hovertemplate: '<b>Cortisol MA</b><br>Time: %{x}<br>Value: %{y:.2f} ng/mL<extra></extra>'
+                });
+
+                // Glucose moving average
+                plotData.push({
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    x: movingAverage.xLabels,
+                    y: movingAverage.glucoseAverage.filter(val => val !== null),
+                    name: 'Glucose MA',
+                    yaxis: 'y2',
+                    line: {
+                        color: 'rgb(255, 140, 0)',
+                        width: 3
+                    },
+                    marker: {
+                        color: 'rgb(255, 140, 0)',
+                        size: 6
+                    },
+                    showlegend: false,
+                    hovertemplate: '<b>Glucose MA</b><br>Time: %{x}<br>Value: %{y:.2f} mg/dL<extra></extra>'
+                });
+            }
+        }
+
+        return { plotData, xLabels: Array.from(xLabels).sort() };
+    };
+
+    // Calculate moving average for the time series data (original function for violin plots)
+    const calculateMovingAverage = (timeSeriesData, windowSize) => {
+        if (!timeSeriesData || timeSeriesData.length === 0) return null;
+        
+        const movingAverageData = [];
+        const xLabels = [];
+        
+        timeSeriesData.forEach((timeGroup, index) => {
+            const biomarkerData = timeGroup.values;
+            
+            if (biomarkerData.length > 0) {
+                // Calculate the mean of all values at this time point
+                const meanValue = biomarkerData.reduce((sum, val) => sum + val, 0) / biomarkerData.length;
+                
+                // Apply moving average calculation
+                let startIndex = Math.max(0, index - Math.floor(windowSize / 2));
+                let endIndex = Math.min(timeSeriesData.length - 1, index + Math.floor(windowSize / 2));
+                
+                // Collect values for moving average window
                 let windowValues = [];
                 for (let i = startIndex; i <= endIndex; i++) {
                     const windowData = timeSeriesData[i].values;
@@ -450,110 +667,122 @@ const AggregatedViolinPlots = () => {
                     }
                 }
                 
+                // Calculate moving average
                 const movingAverage = windowValues.length > 0 ? 
-                    windowValues.reduce((sum, val) => sum + val, 0) / windowValues.length : mean;
-                movingAverageData.push(movingAverage);
-            } else {
-                movingAverageData.push(null);
-            }
-        });
-        
-        return { movingAverageData, xLabels, datasetName };
-    };
-
-    const createTimeSeriesViolinPlotData = () => {
-        const timeSeriesData = prepareTimeSeriesViolinData();
-        if (!timeSeriesData) return null;
-
-        const plotData = [];
-        const xLabels = new Set();
-
-        const processDataset = (dataset, datasetName, colorScheme) => {
-            dataset.forEach((timeGroup, index) => {
-                const biomarkerData = timeGroup.values;
-                if (biomarkerData.length === 0) return;
-
+                    windowValues.reduce((sum, val) => sum + val, 0) / windowValues.length : meanValue;
+                
                 const timeLabel = new Date(timeGroup.timestamp).toLocaleTimeString('en-US', {
                     hour: '2-digit',
                     minute: '2-digit',
                     second: '2-digit'
                 });
-                xLabels.add(timeLabel);
+                
+                movingAverageData.push(movingAverage);
+                xLabels.push(timeLabel);
+            }
+        });
+        
+        return { movingAverageData, xLabels };
+    };
 
-                if (biomarkerData.length >= 2) {
-                    plotData.push({
-                        type: 'violin',
-                        y: biomarkerData,
-                        x: Array(biomarkerData.length).fill(timeLabel),
-                        name: `${timeLabel} - ${datasetName}`,
-                        legendgroup: datasetName,
-                        side: 'both',
-                        box: {
-                            visible: true,
-                            width: 0.3
-                        },
-                        meanline: {
-                            visible: true
-                        },
-                        points: 'all',
-                        pointpos: 0,
-                        jitter: 0.3,
-                        fillcolor: colorScheme.fill,
-                        line: {
-                            color: colorScheme.line
-                        },
-                        marker: {
-                            size: 3,
-                            color: colorScheme.marker,
-                            line: {
-                                width: 0.5,
-                                color: colorScheme.line
-                            }
-                        },
-                        scalemode: 'width',
-                        width: 0.8,
-                        showlegend: false
-                    });
-                } else if (biomarkerData.length === 1) {
-                    plotData.push({
-                        type: 'scatter',
-                        mode: 'markers',
-                        x: [timeLabel],
-                        y: biomarkerData,
-                        name: `${timeLabel} - ${datasetName}`,
-                        legendgroup: datasetName,
-                        marker: {
-                            color: colorScheme.marker,
-                            size: 8,
-                            line: {
-                                color: colorScheme.line,
-                                width: 2
-                            }
-                        },
-                        showlegend: false
-                    });
-                }
-            });
+    const createTimeSeriesViolinPlotData = async () => {
+        const timeSeriesData = await prepareTimeSeriesViolinData();
+        if (!timeSeriesData || timeSeriesData.length === 0) return null;
+
+        const plotData = [];
+        const xLabels = new Set();
+
+        // Color scheme
+        const colorScheme = {
+            fill: selectedBiomarker === 'cortisol' ? 'rgba(136, 132, 216, 0.6)' : 'rgba(130, 202, 157, 0.6)',
+            line: selectedBiomarker === 'cortisol' ? 'rgb(136, 132, 216)' : 'rgb(130, 202, 157)',
+            marker: selectedBiomarker === 'cortisol' ? 'rgba(136, 132, 216, 0.8)' : 'rgba(130, 202, 157, 0.8)'
         };
 
-        // Process main dataset
-        processDataset(timeSeriesData.main, 'Dataset 1', {
-            fill: 'rgba(136, 132, 216, 0.7)',
-            line: 'rgb(136, 132, 216)',
-            marker: 'rgb(136, 132, 216)'
+        timeSeriesData.forEach((timeGroup, index) => {
+            const biomarkerData = timeGroup.values;
+            
+            // Only create violin if we have at least 2 data points for meaningful distribution
+            if (biomarkerData.length >= 2) {
+                const timeLabel = new Date(timeGroup.timestamp).toLocaleTimeString('en-US', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit'
+                });
+                
+                xLabels.add(timeLabel);
+                
+                plotData.push({
+                    type: 'violin',
+                    y: biomarkerData,
+                    x: Array(biomarkerData.length).fill(timeLabel),
+                    name: timeLabel,
+                    side: 'both',
+                    box: {
+                        visible: true,
+                        width: 0.3
+                    },
+                    meanline: {
+                        visible: true
+                    },
+                    points: 'all',
+                    pointpos: 0,
+                    jitter: 0.3,
+                    fillcolor: colorScheme.fill,
+                    line: {
+                        color: colorScheme.line
+                    },
+                    marker: {
+                        size: 3,
+                        color: colorScheme.marker,
+                        line: {
+                            width: 0.5,
+                            color: colorScheme.line
+                        }
+                    },
+                    scalemode: 'width',
+                    width: 0.8,
+                    showlegend: false
+                });
+            } else if (biomarkerData.length === 1) {
+                // For single points, create a scatter plot instead
+                const timeLabel = new Date(timeGroup.timestamp).toLocaleTimeString('en-US', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit'
+                });
+                
+                xLabels.add(timeLabel);
+                
+                plotData.push({
+                    type: 'scatter',
+                    mode: 'markers',
+                    y: biomarkerData,
+                    x: [timeLabel],
+                    name: timeLabel,
+                    marker: {
+                        size: 8,
+                        color: colorScheme.marker,
+                        line: {
+                            width: 2,
+                            color: colorScheme.line
+                        }
+                    },
+                    showlegend: false
+                });
+            }
         });
 
         // Add moving average lines if enabled
         if (showMovingAverage) {
-            // Main dataset moving average
-            const mainMovingAverage = calculateMovingAverage(timeSeriesData.main, movingAverageWindow, 'Dataset 1');
-            if (mainMovingAverage && mainMovingAverage.movingAverageData.length > 0) {
+            const movingAverage = calculateMovingAverage(timeSeriesData, movingAverageWindow);
+            if (movingAverage && movingAverage.movingAverageData.length > 0) {
                 plotData.push({
                     type: 'scatter',
                     mode: 'lines+markers',
-                    x: mainMovingAverage.xLabels,
-                    y: mainMovingAverage.movingAverageData,
-                    name: `Moving Average - ${mainMovingAverage.datasetName} (${movingAverageWindow}-point)`,
+                    x: movingAverage.xLabels,
+                    y: movingAverage.movingAverageData,
+                    name: `Moving Average (${movingAverageWindow}-point)`,
                     line: {
                         color: 'rgb(255, 99, 71)',
                         width: 3,
@@ -568,7 +797,7 @@ const AggregatedViolinPlots = () => {
                         }
                     },
                     showlegend: false,
-                    hovertemplate: '<b>Moving Average - Dataset 1</b><br>Time: %{x}<br>Value: %{y:.2f}<extra></extra>'
+                    hovertemplate: '<b>Moving Average</b><br>Time: %{x}<br>Value: %{y:.2f}<extra></extra>'
                 });
             }
         }
@@ -576,10 +805,41 @@ const AggregatedViolinPlots = () => {
         return { plotData, xLabels: Array.from(xLabels).sort() };
     };
 
-    // Determine which plot data to use
-            const timeSeriesPlotResult = createTimeSeriesViolinPlotData();
-
-    const timeSeriesPlotLayout = timeSeriesPlotResult ? {
+    const timeSeriesPlotLayout = plotData ? (graphType === 'compare' ? {
+        title: {
+            text: `Population Cortisol vs Glucose Violin Plot Comparison Over Time${showMovingAverage ? ` (with ${movingAverageWindow}-point Moving Average)` : ''}`,
+            font: { size: 20 }
+        },
+        xaxis: {
+            title: 'Time Points',
+            titlefont: { size: 14 },
+            tickangle: -45,
+            type: 'category'
+        },
+        yaxis: {
+            title: 'Cortisol (ng/mL)',
+            titlefont: { size: 14, color: 'rgb(136, 132, 216)' },
+            tickfont: { color: 'rgb(136, 132, 216)' },
+            zeroline: false,
+            side: 'left'
+        },
+        yaxis2: {
+            title: 'Glucose (mg/dL)',
+            titlefont: { size: 14, color: 'rgb(130, 202, 157)' },
+            tickfont: { color: 'rgb(130, 202, 157)' },
+            zeroline: false,
+            side: 'right',
+            overlaying: 'y'
+        },
+        showlegend: false,
+        margin: { t: 80, b: 100, l: 80, r: 80 },
+        height: 600,
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        violinmode: 'group',
+        violingap: 0.1,
+        violingroupgap: 0.1
+    } : {
         title: {
             text: `Population ${selectedBiomarker.charAt(0).toUpperCase() + selectedBiomarker.slice(1)} Distribution Over Time${showMovingAverage ? ` (with ${movingAverageWindow}-point Moving Average)` : ''}`,
             font: { size: 20 }
@@ -603,7 +863,7 @@ const AggregatedViolinPlots = () => {
         violinmode: 'group',
         violingap: 0.3,
         violingroupgap: 0.3
-    } : null;
+    }) : null;
 
     const timeSeriesPlotConfig = {
         responsive: true,
@@ -612,38 +872,28 @@ const AggregatedViolinPlots = () => {
         displaylogo: false
     };
 
-    const getTimeSeriesDataSummary = () => {
-        const timeSeriesData = prepareTimeSeriesViolinData();
+    const getTimeSeriesDataSummary = async () => {
+        const timeSeriesData = await prepareTimeSeriesViolinData();
         if (!timeSeriesData) return null;
 
-        const processSummary = (dataset, datasetName) => {
-            const biomarkerCounts = dataset.map(group => ({
-                time: new Date(group.timestamp).toLocaleTimeString('en-US', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    second: '2-digit'
-                }),
-                count: group.values.length,
-                values: group.values
-            })).filter(item => item.count > 0);
+        const biomarkerCounts = timeSeriesData.map(group => ({
+            time: new Date(group.timestamp).toLocaleTimeString('en-US', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            }),
+            count: group.values.length,
+            values: group.values
+        })).filter(item => item.count > 0);
 
-            const totalReadings = biomarkerCounts.reduce((sum, item) => sum + item.count, 0);
-            const avgReadingsPerTime = biomarkerCounts.length > 0 ? totalReadings / biomarkerCounts.length : 0;
-
-            return {
-                name: datasetName,
-                totalTimePoints: biomarkerCounts.length,
-                totalReadings,
-                avgReadingsPerTime: avgReadingsPerTime.toFixed(1),
-                timePointsWithMultipleReadings: biomarkerCounts.filter(item => item.count > 1).length
-            };
-        };
-
-        const mainSummary = processSummary(timeSeriesData.main, 'Dataset 1');
+        const totalReadings = biomarkerCounts.reduce((sum, item) => sum + item.count, 0);
+        const avgReadingsPerTime = biomarkerCounts.length > 0 ? totalReadings / biomarkerCounts.length : 0;
 
         return {
-            main: mainSummary,
-            comparison: null
+            totalTimePoints: biomarkerCounts.length,
+            totalReadings,
+            avgReadingsPerTime: avgReadingsPerTime.toFixed(1),
+            timePointsWithMultipleReadings: biomarkerCounts.filter(item => item.count > 1).length
         };
     };
 
@@ -810,8 +1060,11 @@ const AggregatedViolinPlots = () => {
                                     fullWidth
                                     type="number"
                                     label="Min Age"
-                                    value={filters.ageMin}
-                                    onChange={(e) => handleFilterChange('ageMin', e.target.value)}
+                                    placeholder="Press Enter to apply"
+                                    value={localAgeInputs.ageMin}
+                                    onChange={(e) => handleAgeInputChange('ageMin', e.target.value)}
+                                    onKeyPress={(e) => handleAgeKeyPress(e, 'ageMin', localAgeInputs.ageMin)}
+                                    onBlur={() => handleAgeInputBlur('ageMin', localAgeInputs.ageMin)}
                                     inputProps={{ min: 0, max: 150 }}
                                 />
                             </Grid>
@@ -820,8 +1073,11 @@ const AggregatedViolinPlots = () => {
                                     fullWidth
                                     type="number"
                                     label="Max Age"
-                                    value={filters.ageMax}
-                                    onChange={(e) => handleFilterChange('ageMax', e.target.value)}
+                                    placeholder="Press Enter to apply"
+                                    value={localAgeInputs.ageMax}
+                                    onChange={(e) => handleAgeInputChange('ageMax', e.target.value)}
+                                    onKeyPress={(e) => handleAgeKeyPress(e, 'ageMax', localAgeInputs.ageMax)}
+                                    onBlur={() => handleAgeInputBlur('ageMax', localAgeInputs.ageMax)}
                                     inputProps={{ min: 0, max: 150 }}
                                 />
                             </Grid>
@@ -918,7 +1174,7 @@ const AggregatedViolinPlots = () => {
                     </Grid>
                 </Grid>
 
-                {allUsersData.length > 0 ? (
+                {filteredData.length > 0 ? (
                     <>
                         <Typography variant="h5" gutterBottom align="center" color="primary" sx={{ mb: 3 }}>
                             {getActiveFiltersCount() > 0 ? 'Filtered' : 'Population-Level'} Time Series Biomarker Analysis
@@ -971,6 +1227,7 @@ const AggregatedViolinPlots = () => {
                                         </Select>
                                     </FormControl>
                                 </Grid>
+
                                 <Grid item xs={12} md={2}>
                                     <FormControlLabel
                                         control={
@@ -999,21 +1256,24 @@ const AggregatedViolinPlots = () => {
                                         </Select>
                                     </FormControl>
                                 </Grid>
-                                <Grid item xs={12} md={graphType === 'violin' ? 2 : 4}>
-                                    <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-                                        {`Each violin shows the population distribution of ${selectedBiomarker} readings from all users and sensors at a specific time point.`}
-                                        Single readings are shown as scatter points.
-                                        {showMovingAverage && ` The moving average line (${movingAverageWindow}-point window) smooths the mean values across time points to reveal trends.`}
+                                <Grid item xs={12} md={4}>
+                                    <Typography variant="body2" color="text.secondary">
+                                        {graphType === 'compare' ? 
+                                            'Dual-axis comparison view showing both cortisol and glucose data' :
+                                            'Showing population distribution across sensors at each time point'
+                                        }
                                     </Typography>
                                 </Grid>
                             </Grid>
                         </Paper>
 
+
+
                         {/* Time Series Violin Plot */}
-                        {timeSeriesPlotResult && timeSeriesPlotResult.plotData.length > 0 ? (
+                        {plotData && plotData.plotData.length > 0 ? (
                             <Paper sx={{ p: 2, mb: 3 }}>
                                 <Plot
-                                    data={timeSeriesPlotResult.plotData}
+                                    data={plotData.plotData}
                                     layout={timeSeriesPlotLayout}
                                     config={timeSeriesPlotConfig}
                                     useResizeHandler={false}
@@ -1032,51 +1292,12 @@ const AggregatedViolinPlots = () => {
                         )}
 
                         {/* Time Series Summary Statistics */}
-                        {(() => {
-                            const summary = getTimeSeriesDataSummary();
-                            return summary && (
-                                <Paper sx={{ p: 3, bgcolor: 'background.default' }}>
-                                    <Typography variant="h6" gutterBottom color="primary">
-                                        Population Time Series Analysis Summary
-                                    </Typography>
-                                    
-                                    <Grid container spacing={3}>
-                                        <Grid item xs={12} md={3}>
-                                            <Typography variant="body2" color="text.secondary">
-                                                Total Time Points:
-                                            </Typography>
-                                            <Typography variant="h6">
-                                                {summary.main.totalTimePoints}
-                                            </Typography>
-                                        </Grid>
-                                        <Grid item xs={12} md={3}>
-                                            <Typography variant="body2" color="text.secondary">
-                                                Total Population Readings:
-                                            </Typography>
-                                            <Typography variant="h6">
-                                                {summary.main.totalReadings}
-                                            </Typography>
-                                        </Grid>
-                                        <Grid item xs={12} md={3}>
-                                            <Typography variant="body2" color="text.secondary">
-                                                Avg Readings per Time:
-                                            </Typography>
-                                            <Typography variant="h6">
-                                                {summary.main.avgReadingsPerTime}
-                                            </Typography>
-                                        </Grid>
-                                        <Grid item xs={12} md={3}>
-                                            <Typography variant="body2" color="text.secondary">
-                                                Violin Plots (≥2 readings):
-                                            </Typography>
-                                            <Typography variant="h6">
-                                                {summary.main.timePointsWithMultipleReadings}
-                                            </Typography>
-                                        </Grid>
-                                    </Grid>
-                                </Paper>
-                            );
-                        })()}
+                        <TimeSeriesSummary 
+                            getTimeSeriesDataSummary={getTimeSeriesDataSummary}
+                            selectedBiomarker={selectedBiomarker}
+                            showMovingAverage={showMovingAverage}
+                            movingAverageWindow={movingAverageWindow}
+                        />
                     </>
                 ) : (
                     <Paper sx={{ p: 4, mt: 2 }}>
@@ -1096,6 +1317,69 @@ const AggregatedViolinPlots = () => {
                 )}
             </Box>
         </Container>
+    );
+};
+
+// Separate component for Time Series Summary to handle async data
+const TimeSeriesSummary = ({ getTimeSeriesDataSummary, selectedBiomarker, showMovingAverage, movingAverageWindow }) => {
+    const [summary, setSummary] = useState(null);
+
+    useEffect(() => {
+        const fetchSummary = async () => {
+            const summaryData = await getTimeSeriesDataSummary();
+            setSummary(summaryData);
+        };
+        fetchSummary();
+    }, [getTimeSeriesDataSummary]);
+
+    if (!summary) return null;
+
+    return (
+        <Paper sx={{ p: 3, bgcolor: 'background.default' }}>
+            <Typography variant="h6" gutterBottom color="primary">
+                Population Time Series Analysis Summary
+            </Typography>
+            
+            <Grid container spacing={3}>
+                <Grid item xs={12} md={3}>
+                    <Typography variant="body2" color="text.secondary">
+                        Total Time Points:
+                    </Typography>
+                    <Typography variant="h6">
+                        {summary.totalTimePoints}
+                    </Typography>
+                </Grid>
+                <Grid item xs={12} md={3}>
+                    <Typography variant="body2" color="text.secondary">
+                        Total Population Readings:
+                    </Typography>
+                    <Typography variant="h6">
+                        {summary.totalReadings}
+                    </Typography>
+                </Grid>
+                <Grid item xs={12} md={3}>
+                    <Typography variant="body2" color="text.secondary">
+                        Avg Readings per Time:
+                    </Typography>
+                    <Typography variant="h6">
+                        {summary.avgReadingsPerTime}
+                    </Typography>
+                </Grid>
+                <Grid item xs={12} md={3}>
+                    <Typography variant="body2" color="text.secondary">
+                        Violin Plots (≥2 readings):
+                    </Typography>
+                    <Typography variant="h6">
+                        {summary.timePointsWithMultipleReadings}
+                    </Typography>
+                </Grid>
+            </Grid>
+            
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+                Each violin shows the population distribution of {selectedBiomarker} readings from all users and sensors at a specific time point. Single readings are shown as scatter points.
+                {showMovingAverage && ` The moving average line (${movingAverageWindow}-point window) smooths the mean values across time points to reveal trends.`}
+            </Typography>
+        </Paper>
     );
 };
 
