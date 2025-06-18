@@ -5,6 +5,7 @@ import FileTracker from './components/FileTracker';
 import UserVersions from './components/UserVersions';
 import Login from './components/Login';
 import AGPReport from './components/AGPReport';
+import AGPComparison from './components/AGPComparison';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -59,6 +60,16 @@ function App() {
             element={
               isAuthenticated ? (
                 <AGPReport />
+              ) : (
+                <Navigate to="/" replace />
+              )
+            } 
+          />
+          <Route 
+            path="/agp-comparison/:username1/:username2/:biomarkerType" 
+            element={
+              isAuthenticated ? (
+                <AGPComparison />
               ) : (
                 <Navigate to="/" replace />
               )

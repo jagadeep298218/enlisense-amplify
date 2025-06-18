@@ -21,6 +21,9 @@ import AnalyticsIcon from '@mui/icons-material/Analytics';
 import PersonIcon from '@mui/icons-material/Person';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import MedicalServicesIcon from '@mui/icons-material/MedicalServices';
+import CSVUpload from './CSVUpload';
+import PatientComparison from './PatientComparison';
+
 
 const FileTracker = () => {
     const [fileData, setFileData] = useState([]);
@@ -333,6 +336,22 @@ const FileTracker = () => {
                     )}
                 </Toolbar>
             </AppBar>
+
+            {/* Admin-only components */}
+            {user && user.admin && (
+                <>
+                    {/* Patient Comparison Component */}
+                    <PatientComparison patients={fileData} />
+                    
+                    {/* CSV Upload Component */}
+                    <CSVUpload 
+                        onUploadComplete={(result) => {
+                            console.log('CSV upload completed:', result);
+                            // Optionally refresh the data or show a notification
+                        }}
+                    />
+                </>
+            )}
 
             <Paper sx={{ p: 3 }}>
                 <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

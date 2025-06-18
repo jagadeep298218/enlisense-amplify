@@ -6,6 +6,9 @@ const { MongoClient, ObjectId } = require('mongodb');
 const cors = require('cors'); //lets the backend communicate with the frontend
 const jwt = require('jsonwebtoken'); //used to verify the token
 const { Parser } = require('json2csv'); //used to convert the data to csv
+const multer = require('multer'); //used to handle file uploads
+const csv = require('csv-parser'); //used to parse CSV files
+const fs = require('fs');
 
 const app = express();
 const port = 3000;
@@ -13,6 +16,21 @@ const JWT_SECRET = 'your-secret-key'; // In production, use environment variable
 
 app.use(cors());
 app.use(express.json());
+
+// Configure multer for file uploads
+const upload = multer({
+    dest: 'uploads/',
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype === 'text/csv' || file.originalname.endsWith('.csv')) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only CSV files are allowed!'), false);
+        }
+    },
+    limits: {
+        fileSize: 5 * 1024 * 1024 // 5MB limit
+    }
+});
 
 const uri = 'mongodb+srv://s3-mongodb-lambda-user:eimYcXJoDU9382sw@s3-mongodb-cluster.venvicc.mongodb.net/?retryWrites=true&w=majority&appName=s3-mongodb-cluster';
 const client = new MongoClient(uri);
@@ -366,6 +384,469 @@ app.get('/filetracker/download-csv', authenticateToken, async (req, res) => {
         res.status(500).json({ error: 'Failed to generate CSV file' });
     }
 });
+
+// CSV upload endpoint for personal information
+app.post('/upload-personal-info', authenticateToken, upload.single('csvFile'), async (req, res) => {
+    try {
+        // Check if user is admin
+        if (!req.user.admin) {
+            return res.status(403).json({ error: 'Only administrators can upload personal information' });
+        }
+
+        if (!req.file) {
+            return res.status(400).json({ error: 'No CSV file uploaded' });
+        }
+
+        const csvData = [];
+        const stream = fs.createReadStream(req.file.path)
+            .pipe(csv())
+            .on('data', (data) => {
+                // Convert boolean strings to actual booleans
+                const processedData = {};
+                for (const key in data) {
+                    let value = data[key];
+                    if (value === 'TRUE' || value === 'true') {
+                        value = true;
+                    } else if (value === 'FALSE' || value === 'false') {
+                        value = false;
+                    }
+                    processedData[key] = value;
+                }
+                csvData.push(processedData);
+            })
+            .on('end', async () => {
+                try {
+                    const db = client.db('s3-mongodb-db');
+                    const collection = db.collection('s3-mongodb-data-entries');
+                    
+                    let successCount = 0;
+                    let errorCount = 0;
+                    const errors = [];
+
+                    // Process each row from CSV
+                    for (const row of csvData) {
+                        try {
+                            const { username, ...personalInfo } = row;
+                            
+                            if (!username) {
+                                errors.push(`Row missing username: ${JSON.stringify(row)}`);
+                                errorCount++;
+                                continue;
+                            }
+
+                            // Update or insert personal information for the user
+                            const result = await collection.updateOne(
+                                { username: username },
+                                { 
+                                    $set: { 
+                                        personal_information: personalInfo,
+                                        updated_at: new Date()
+                                    },
+                                    $setOnInsert: {
+                                        username: username,
+                                        created_at: new Date()
+                                    }
+                                },
+                                { upsert: true }
+                            );
+
+                            successCount++;
+                            console.log(`Updated personal info for user: ${username}`);
+                            
+                        } catch (userError) {
+                            console.error(`Error processing user ${row.username}:`, userError);
+                            errors.push(`Error for user ${row.username}: ${userError.message}`);
+                            errorCount++;
+                        }
+                    }
+
+                    // Clean up uploaded file
+                    fs.unlinkSync(req.file.path);
+
+                    res.json({
+                        message: 'Personal information upload completed',
+                        successCount,
+                        errorCount,
+                        totalRows: csvData.length,
+                        errors: errors.length > 0 ? errors : undefined
+                    });
+
+                } catch (dbError) {
+                    console.error('Database error during CSV processing:', dbError);
+                    fs.unlinkSync(req.file.path);
+                    res.status(500).json({ error: 'Database error during processing' });
+                }
+            })
+            .on('error', (streamError) => {
+                console.error('CSV parsing error:', streamError);
+                fs.unlinkSync(req.file.path);
+                res.status(400).json({ error: 'Invalid CSV format' });
+            });
+
+    } catch (error) {
+        console.error('Error processing CSV upload:', error);
+        if (req.file) {
+            fs.unlinkSync(req.file.path);
+        }
+        res.status(500).json({ error: 'Failed to process CSV file' });
+    }
+});
+
+// Get personal information for a user
+app.get('/user-personal-info/:username', authenticateToken, async (req, res) => {
+    try {
+        const { username } = req.params;
+        
+        // Check authorization
+        if (!req.user.admin && 
+            req.user.username !== username && 
+            !req.user.patients?.includes(username)) {
+            return res.status(403).json({ error: 'Not authorized to view this data' });
+        }
+
+        const db = client.db('s3-mongodb-db');
+        const collection = db.collection('s3-mongodb-data-entries');
+        const userRecord = await collection.findOne(
+            { username: username },
+            { projection: { personal_information: 1, username: 1, updated_at: 1 } }
+        );
+        
+        if (!userRecord || !userRecord.personal_information) {
+            return res.status(404).json({ error: 'Personal information not found for this user' });
+        }
+
+        res.status(200).json({
+            username: userRecord.username,
+            personal_information: userRecord.personal_information,
+            updated_at: userRecord.updated_at
+        });
+    } catch (error) {
+        console.error('Error fetching personal info:', error);
+        res.status(500).json({ error: 'Failed to fetch personal information' });
+    }
+});
+
+// Debug endpoint to check user data structure
+app.get('/debug-user-data/:username', authenticateToken, async (req, res) => {
+    try {
+        // Check if user is admin
+        if (!req.user.admin) {
+            return res.status(403).json({ error: 'Only administrators can access debug data' });
+        }
+
+        const { username } = req.params;
+        const db = client.db('s3-mongodb-db');
+        const fileTrackerCollection = db.collection('s3-mongodb-file_tracker');
+        const dataEntriesCollection = db.collection('s3-mongodb-data-entries');
+
+        // Get user file info
+        const userFileInfo = await fileTrackerCollection.findOne({ username: username });
+        
+        let debugInfo = {
+            username: username,
+            fileTrackerExists: !!userFileInfo,
+            userFileInfo: userFileInfo ? {
+                hasEtag: !!userFileInfo.etag,
+                etag: userFileInfo.etag,
+                deviceInfo: userFileInfo.device_info
+            } : null,
+            sensorDataExists: false,
+            sampleDataEntry: null,
+            dataFieldsFound: []
+        };
+
+        if (userFileInfo && userFileInfo.etag) {
+            const sensorDataEntry = await dataEntriesCollection.findOne({ etag: userFileInfo.etag });
+            debugInfo.sensorDataExists = !!sensorDataEntry;
+            
+            if (sensorDataEntry) {
+                debugInfo.hasDataArray = !!sensorDataEntry.data;
+                debugInfo.dataArrayLength = sensorDataEntry.data ? sensorDataEntry.data.length : 0;
+                debugInfo.dataArrayType = sensorDataEntry.data ? typeof sensorDataEntry.data : 'undefined';
+                debugInfo.isArrayActually = Array.isArray(sensorDataEntry.data);
+                
+                // Show what keys exist in the sensorDataEntry
+                debugInfo.sensorDataEntryKeys = Object.keys(sensorDataEntry);
+                
+                if (sensorDataEntry.data && sensorDataEntry.data.length > 0) {
+                    // Find the first non-null entry
+                    let firstValidEntry = null;
+                    let firstValidIndex = -1;
+                    
+                    for (let i = 0; i < Math.min(10, sensorDataEntry.data.length); i++) {
+                        if (sensorDataEntry.data[i] && typeof sensorDataEntry.data[i] === 'object') {
+                            firstValidEntry = sensorDataEntry.data[i];
+                            firstValidIndex = i;
+                            break;
+                        }
+                    }
+                    
+                    debugInfo.sampleDataEntry = firstValidEntry;
+                    debugInfo.firstValidEntryIndex = firstValidIndex;
+                    debugInfo.totalDataEntries = sensorDataEntry.data.length;
+                    
+                    if (firstValidEntry) {
+                        // Check what fields are available
+                        const fields = Object.keys(firstValidEntry);
+                        debugInfo.dataFieldsFound = fields;
+                        
+                        // Check for biomarker fields specifically
+                        debugInfo.biomarkerFields = {
+                            hasGlucose1: 'glucose1' in firstValidEntry,
+                            hasGlucose2: 'glucose2' in firstValidEntry,
+                            hasCortisol1: 'cortisol1' in firstValidEntry,
+                            hasCortisol2: 'cortisol2' in firstValidEntry
+                        };
+                        
+                        // Show sample values
+                        debugInfo.sampleValues = {
+                            glucose1: firstValidEntry.glucose1,
+                            glucose2: firstValidEntry.glucose2,
+                            cortisol1: firstValidEntry.cortisol1,
+                            cortisol2: firstValidEntry.cortisol2,
+                            timestamp: firstValidEntry.timestamp || firstValidEntry.dateTime
+                        };
+                    } else {
+                        debugInfo.issue = "All entries in data array are null or invalid";
+                        debugInfo.firstFewEntries = sensorDataEntry.data.slice(0, 5);
+                    }
+                } else {
+                    debugInfo.issue = "Data array is empty or doesn't exist";
+                    if (sensorDataEntry.data) {
+                        debugInfo.actualDataContent = sensorDataEntry.data;
+                    }
+                    // Check if there are other potential data fields
+                    const otherFields = Object.keys(sensorDataEntry).filter(key => 
+                        key !== '_id' && key !== 'etag' && key !== 'username' && 
+                        key !== 'processed_at' && key !== 'data'
+                    );
+                    debugInfo.otherPossibleDataFields = otherFields;
+                    if (otherFields.length > 0) {
+                        debugInfo.otherFieldsContent = {};
+                        otherFields.forEach(field => {
+                            debugInfo.otherFieldsContent[field] = sensorDataEntry[field];
+                        });
+                    }
+                }
+            }
+        }
+
+        res.json(debugInfo);
+    } catch (error) {
+        console.error('Error in debug endpoint:', error);
+        res.status(500).json({ error: 'Failed to fetch debug data' });
+    }
+});
+
+// AGP Comparison endpoint for admins
+app.get('/agp-comparison/:username1/:username2/:biomarkerType', authenticateToken, async (req, res) => {
+    try {
+        // Check if user is admin
+        if (!req.user.admin) {
+            return res.status(403).json({ error: 'Only administrators can compare AGP reports' });
+        }
+
+        const { username1, username2, biomarkerType } = req.params;
+        
+        if (!['glucose', 'cortisol'].includes(biomarkerType)) {
+            return res.status(400).json({ error: 'Invalid biomarker type. Must be glucose or cortisol' });
+        }
+
+        // Fetch AGP data for both users
+        const agpResults = await Promise.all([
+            fetchUserAGPData(username1, biomarkerType),
+            fetchUserAGPData(username2, biomarkerType)
+        ]);
+
+        res.json({
+            patient1: {
+                username: username1,
+                data: agpResults[0]
+            },
+            patient2: {
+                username: username2,
+                data: agpResults[1]
+            },
+            biomarkerType,
+            comparedAt: new Date()
+        });
+
+    } catch (error) {
+        console.error('Error fetching AGP comparison data:', error);
+        res.status(500).json({ error: 'Failed to fetch AGP comparison data' });
+    }
+});
+
+// Helper function to fetch AGP data for a single user
+async function fetchUserAGPData(username, biomarkerType) {
+    try {
+        console.log(`Fetching AGP data for user: ${username}, biomarker: ${biomarkerType}`);
+        const db = client.db('s3-mongodb-db');
+        const fileTrackerCollection = db.collection('s3-mongodb-file_tracker');
+        const dataEntriesCollection = db.collection('s3-mongodb-data-entries');
+
+        // Get user file info
+        const userFileInfo = await fileTrackerCollection.findOne({ username: username });
+        console.log(`User file info for ${username}:`, userFileInfo ? 'Found' : 'Not found');
+        if (!userFileInfo) {
+            return { error: `User ${username} not found in file tracker` };
+        }
+        if (!userFileInfo.etag) {
+            return { error: `User ${username} has no etag (no processed data)` };
+        }
+
+        // Get sensor data
+        console.log(`Looking for sensor data with etag: ${userFileInfo.etag}`);
+        const sensorDataEntry = await dataEntriesCollection.findOne({ etag: userFileInfo.etag });
+        console.log(`Sensor data entry for ${username}:`, sensorDataEntry ? 'Found' : 'Not found');
+        if (!sensorDataEntry) {
+            return { error: `No sensor data entry found for user ${username} with etag ${userFileInfo.etag}` };
+        }
+        if (!sensorDataEntry.data) {
+            return { error: `Sensor data entry exists for user ${username} but contains no data` };
+        }
+
+        let sensorData = [];
+        
+        // Handle different data structures
+        if (Array.isArray(sensorDataEntry.data)) {
+            // Old format: data is directly an array
+            sensorData = sensorDataEntry.data;
+            console.log(`Using old format - sensor data array length for ${username}: ${sensorData.length}`);
+        } else if (sensorDataEntry.data.data_points && Array.isArray(sensorDataEntry.data.data_points)) {
+            // New format: data is an object with data_points array
+            sensorData = sensorDataEntry.data.data_points;
+            console.log(`Using new format - sensor data array length for ${username}: ${sensorData.length}`);
+        } else {
+            return { error: `Sensor data for user ${username} is neither an array nor has data_points array. Structure: ${JSON.stringify(Object.keys(sensorDataEntry.data))}` };
+        }
+
+        let biomarkerData = [];
+
+        // Sample first few entries to see data structure
+        if (sensorData.length > 0) {
+            console.log(`Sample data entry for ${username}:`, JSON.stringify(sensorData[0], null, 2));
+        }
+
+        // Extract biomarker data based on type
+        sensorData.forEach((entry, index) => {
+            if (biomarkerType === 'glucose') {
+                // Handle both old and new field names
+                const glucose1 = entry.glucose1 || entry['Glucose(mg/dL)'];
+                const glucose2 = entry.glucose2 || entry['Glucose(mg/dL)_2'];
+                
+                if (glucose1 && !isNaN(parseFloat(glucose1))) {
+                    biomarkerData.push({
+                        timestamp: entry.timestamp || entry.dateTime,
+                        value: parseFloat(glucose1),
+                        sensor: 1
+                    });
+                }
+                if (glucose2 && !isNaN(parseFloat(glucose2))) {
+                    biomarkerData.push({
+                        timestamp: entry.timestamp || entry.dateTime,
+                        value: parseFloat(glucose2),
+                        sensor: 2
+                    });
+                }
+            } else if (biomarkerType === 'cortisol') {
+                // Handle both old and new field names
+                const cortisol1 = entry.cortisol1 || entry['Cortisol(ng/mL)'];
+                const cortisol2 = entry.cortisol2 || entry['Cortisol(ng/mL)_2'];
+                
+                if (cortisol1 && !isNaN(parseFloat(cortisol1))) {
+                    biomarkerData.push({
+                        timestamp: entry.timestamp || entry.dateTime,
+                        value: parseFloat(cortisol1),
+                        sensor: 1
+                    });
+                }
+                if (cortisol2 && !isNaN(parseFloat(cortisol2))) {
+                    biomarkerData.push({
+                        timestamp: entry.timestamp || entry.dateTime,
+                        value: parseFloat(cortisol2),
+                        sensor: 2
+                    });
+                }
+            }
+        });
+
+        console.log(`Extracted ${biomarkerData.length} ${biomarkerType} readings for user ${username}`);
+        if (biomarkerData.length === 0) {
+            return { error: `No ${biomarkerType} data found for user ${username}. Check if the data contains ${biomarkerType}1 or ${biomarkerType}2 fields.` };
+        }
+
+        // Calculate statistics
+        const statistics = biomarkerType === 'glucose' 
+            ? calculateAGPStatistics(biomarkerData)
+            : calculateCortisolStatistics(biomarkerData);
+
+        // Calculate hourly percentiles for AGP chart
+        const hourlyData = Array(24).fill(null).map(() => []);
+        
+        biomarkerData.forEach(point => {
+            const date = new Date(point.timestamp);
+            if (!isNaN(date.getTime())) {
+                const hour = date.getHours();
+                hourlyData[hour].push(point.value);
+            }
+        });
+
+        const percentiles = {
+            percentile_5: [],
+            percentile_25: [],
+            percentile_50: [],
+            percentile_75: [],
+            percentile_95: []
+        };
+
+        hourlyData.forEach(hourData => {
+            if (hourData.length > 0) {
+                hourData.sort((a, b) => a - b);
+                const getPercentile = (arr, p) => {
+                    const index = (p / 100) * (arr.length - 1);
+                    if (Number.isInteger(index)) {
+                        return arr[index];
+                    } else {
+                        const lower = Math.floor(index);
+                        const upper = Math.ceil(index);
+                        const weight = index - lower;
+                        return arr[lower] * (1 - weight) + arr[upper] * weight;
+                    }
+                };
+
+                percentiles.percentile_5.push(getPercentile(hourData, 5));
+                percentiles.percentile_25.push(getPercentile(hourData, 25));
+                percentiles.percentile_50.push(getPercentile(hourData, 50));
+                percentiles.percentile_75.push(getPercentile(hourData, 75));
+                percentiles.percentile_95.push(getPercentile(hourData, 95));
+            } else {
+                // No data for this hour
+                percentiles.percentile_5.push(null);
+                percentiles.percentile_25.push(null);
+                percentiles.percentile_50.push(null);
+                percentiles.percentile_75.push(null);
+                percentiles.percentile_95.push(null);
+            }
+        });
+
+        return {
+            username,
+            device_info: userFileInfo.device_info,
+            statistics,
+            percentiles,
+            totalReadings: biomarkerData.length,
+            dataRange: {
+                start: new Date(Math.min(...biomarkerData.map(d => new Date(d.timestamp)))),
+                end: new Date(Math.max(...biomarkerData.map(d => new Date(d.timestamp))))
+            }
+        };
+
+    } catch (error) {
+        console.error(`Error fetching AGP data for ${username}:`, error);
+        return { error: `Failed to fetch data for user ${username}` };
+    }
+}
 
 // Helper function to get users accessible to the current user
 async function getAccessibleUsers(user) {

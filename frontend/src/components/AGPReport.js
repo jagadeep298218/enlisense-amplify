@@ -725,7 +725,7 @@ function AGPReport() {
               )}
               
               {/* GMI - Only for Glucose */}
-              {biomarkerType === 'glucose' && (
+              {biomarkerType === 'glucose' && ( 
                 <Grid item xs={12} sm={6} md={3}>
                   <Box sx={{ textAlign: 'center', p: 2, border: '1px solid #e0e0e0', borderRadius: 2 }}>
                     <Typography variant="body2" color="textSecondary" gutterBottom>
@@ -736,7 +736,8 @@ function AGPReport() {
                     </Typography>
                   </Box>
                 </Grid>
-              )}
+              )
+              }
               
               {/* Coefficient of Variation */}
               <Grid item xs={12} sm={6} md={3}>

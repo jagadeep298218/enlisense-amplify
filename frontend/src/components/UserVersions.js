@@ -58,6 +58,7 @@ const UserVersions = () => {
     const [versions, setVersions] = useState([]);
     const [dataVersions, setDataVersions] = useState([]);
     const [userDeviceInfo, setUserDeviceInfo] = useState(null);
+    const [personalInfo, setPersonalInfo] = useState(null);
     const [sensorData, setSensorData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -99,6 +100,17 @@ const UserVersions = () => {
                 });
 
                 setUserDeviceInfo(deviceInfoResponse.data);
+
+                // Fetch personal information
+                try {
+                    const personalInfoResponse = await axios.get(`http://localhost:3000/user-personal-info/${username}`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    setPersonalInfo(personalInfoResponse.data);
+                } catch (personalInfoError) {
+                    console.log('No personal information found for user:', personalInfoError.response?.data?.error);
+                    setPersonalInfo(null);
+                }
 
                 // Fetch versions and sensor data in parallel
                 const promises = [
@@ -488,6 +500,38 @@ const UserVersions = () => {
                                                 )}
                                             </Paper>
                                         </Grid>
+                                        {/* Personal Information Section */}
+                                        {personalInfo && (
+                                            <Grid item xs={12}>
+                                                <Paper sx={{ p: 3, bgcolor: 'background.default' }}>
+                                                    <Typography variant="h6" gutterBottom color="primary">
+                                                        Personal Information
+                                                    </Typography>
+                                                    <Grid container spacing={2}>
+                                                        {Object.entries(personalInfo.personal_information).map(([key, value]) => (
+                                                            <Grid item xs={12} sm={6} md={4} key={key}>
+                                                                <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+                                                                    <Typography variant="body1">
+                                                                        <strong>{key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}:</strong>
+                                                                    </Typography>
+                                                                    <Chip 
+                                                                        label={value === true ? 'Yes' : value === false ? 'No' : value}
+                                                                        color={value === true ? 'success' : value === false ? 'default' : 'primary'}
+                                                                        size="small"
+                                                                        variant={typeof value === 'boolean' ? 'filled' : 'outlined'}
+                                                                    />
+                                                                </Box>
+                                                            </Grid>
+                                                        ))}
+                                                    </Grid>
+                                                    {personalInfo.updated_at && (
+                                                        <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: 'block' }}>
+                                                            Last updated: {formatDate(personalInfo.updated_at)}
+                                                        </Typography>
+                                                    )}
+                                                </Paper>
+                                            </Grid>
+                                        )}
                                     </Grid>
                                 ) : (
                                     <Typography variant="body1" align="center" sx={{ mt: 4 }}>
