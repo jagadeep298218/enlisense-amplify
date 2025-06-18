@@ -248,6 +248,28 @@ const FileTracker = () => {
                     variant={params.value === 'Active' ? 'filled' : 'outlined'}
                 />
             )
+        },
+        {
+            field: 'actions',
+            headerName: 'Actions',
+            width: 150,
+            sortable: false,
+            renderCell: (params) => (
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button
+                        size="small"
+                        variant="outlined"
+                        startIcon={<AnalyticsIcon />}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/agp-report/${params.row.username}`);
+                        }}
+                        sx={{ minWidth: 'auto' }}
+                    >
+                        AGP
+                    </Button>
+                </Box>
+            )
         }
     ];
 
@@ -302,16 +324,7 @@ const FileTracker = () => {
                                 </Button>
                             )}
                             
-                            {(user.admin || user.doctor) && (
-                                <Button
-                                    onClick={() => navigate('/aggregated-analysis')}
-                                    startIcon={<AnalyticsIcon />}
-                                    variant="contained"
-                                    size="small"
-                                >
-                                    Population Analysis
-                                </Button>
-                            )}
+
                             
                             <IconButton onClick={handleLogout} color="inherit">
                                 <LogoutIcon />
@@ -327,7 +340,7 @@ const FileTracker = () => {
                         User Data Overview
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                        {fileData.length} users • Click on any row to view details
+                        {fileData.length} users • Click row for details • Use AGP button for glucose analysis
                     </Typography>
                 </Box>
 

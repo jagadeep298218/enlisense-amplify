@@ -4,8 +4,7 @@ import './App.css';
 import FileTracker from './components/FileTracker';
 import UserVersions from './components/UserVersions';
 import Login from './components/Login';
-import AggregatedViolinPlots from './components/AggregatedViolinPlots';
-import './components/FileTracker.css';
+import AGPReport from './components/AGPReport';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -56,10 +55,10 @@ function App() {
             } 
           />
           <Route 
-            path="/aggregated-analysis" 
+            path="/agp-report/:username" 
             element={
               isAuthenticated ? (
-                <AggregatedViolinPlots />
+                <AGPReport />
               ) : (
                 <Navigate to="/" replace />
               )

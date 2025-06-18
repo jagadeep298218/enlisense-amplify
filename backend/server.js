@@ -57,33 +57,6 @@ async function findUser(username) {
     return await collection.findOne({ username: username });
 }
 
-//Used to find and get the latest entry and info of a certain user
-async function currentVersion(latestUser) {
-    const db = client.db('s3-mongo-db');
-    const collection = db.collection('s3-mongodb-data-entires');
-    return await collection.findOne({username: latestUser });
-}
-
-
-//To get past version control data
-async function checkUserAccessToPatientId(user, patientId) {
-    try {
-        const db = client.db('s3-mongodb-db');
-        const fileTrackerCollection = db.collection('s3-mongodb-file_tracker');
-        
-        // Look for files that contain this patientId in their path and belong to this user
-        const fileRecord = await fileTrackerCollection.findOne({
-            username: user.username,
-            _id: { $regex: patientId, $options: 'i' }
-        });
-        
-        return !!fileRecord;
-    } catch (error) {
-        console.error('Error checking user access to patient_id:', error);
-        return false;
-    }
-}
-
 // Login endpoint
 app.post('/login', async (req, res) => {
     try {
@@ -719,6 +692,527 @@ app.get('/aggregated-data/filtered', authenticateToken, async (req, res) => {
         console.error('Error details:', error);
         console.error('Stack trace:', error.stack);
         res.status(500).json({ error: 'Failed to fetch filtered data' });
+    }
+});
+
+
+
+// Calculate cortisol statistics and percentiles for Chart.js component
+function calculateCortisolStatistics(cortisolData) {
+    if (!cortisolData || cortisolData.length === 0) {
+        return {
+            statistics: {
+                average: 0,
+                percentBelow5: 0,
+                percentBelow10: 0,
+                percentBetween10And30: 0,
+                percentAbove30: 0,
+                percentAbove50: 0,
+                coefficientOfVariationPercentage: 0
+            },
+            percentages: {
+                percentile_5: Array(24).fill(0),
+                percentile_25: Array(24).fill(0),
+                percentile_50: Array(24).fill(0),
+                percentile_75: Array(24).fill(0),
+                percentile_95: Array(24).fill(0)
+            },
+            startAt: new Date().toISOString(),
+            endAt: new Date().toISOString()
+        };
+    }
+
+    const values = cortisolData.map(d => d.value);
+    const sortedValues = values.sort((a, b) => a - b);
+    
+    // Calculate basic statistics
+    const total = values.length;
+    const sum = values.reduce((a, b) => a + b, 0);
+    const average = Math.round((sum / total) * 1000) / 1000; // Round to 3 decimal places for cortisol
+    
+    // Calculate time in ranges for cortisol (ng/mL)
+    // Normal cortisol ranges: Low <5, Normal 5-30, High >30, Very High >50
+    const below5 = values.filter(v => v < 5).length;
+    const below10 = values.filter(v => v < 10).length;
+    const between10And30 = values.filter(v => v >= 10 && v <= 30).length;
+    const above30 = values.filter(v => v > 30).length;
+    const above50 = values.filter(v => v > 50).length;
+    
+    const percentBelow5 = Math.round((below5 / total) * 100);
+    const percentBelow10 = Math.round((below10 / total) * 100);
+    const percentBetween10And30 = Math.round((between10And30 / total) * 100);
+    const percentAbove30 = Math.round((above30 / total) * 100);
+    const percentAbove50 = Math.round((above50 / total) * 100);
+    
+    // Calculate coefficient of variation
+    const variance = values.reduce((acc, val) => acc + Math.pow(val - average, 2), 0) / total;
+    const standardDeviation = Math.sqrt(variance);
+    const coefficientOfVariationPercentage = Math.round((standardDeviation / average) * 100);
+    
+    // Group data by hour for percentile calculations
+    const hourlyData = Array(24).fill(null).map(() => []);
+    
+    cortisolData.forEach(point => {
+        const hour = new Date(point.timestamp).getHours();
+        hourlyData[hour].push(point.value);
+    });
+    
+    // Calculate percentiles for each hour
+    const percentile_5 = [];
+    const percentile_25 = [];
+    const percentile_50 = [];
+    const percentile_75 = [];
+    const percentile_95 = [];
+    
+    for (let hour = 0; hour < 24; hour++) {
+        const hourValues = hourlyData[hour].sort((a, b) => a - b);
+        
+        if (hourValues.length === 0) {
+            // Use overall average if no data for this hour
+            percentile_5.push(average * 0.7);
+            percentile_25.push(average * 0.85);
+            percentile_50.push(average);
+            percentile_75.push(average * 1.15);
+            percentile_95.push(average * 1.3);
+        } else {
+            const getPercentile = (arr, p) => {
+                const index = Math.ceil(arr.length * p / 100) - 1;
+                return arr[Math.max(0, Math.min(index, arr.length - 1))];
+            };
+            
+            percentile_5.push(getPercentile(hourValues, 5));
+            percentile_25.push(getPercentile(hourValues, 25));
+            percentile_50.push(getPercentile(hourValues, 50));
+            percentile_75.push(getPercentile(hourValues, 75));
+            percentile_95.push(getPercentile(hourValues, 95));
+        }
+    }
+    
+    // Get date range
+    const timestamps = cortisolData.map(d => new Date(d.timestamp));
+    const startAt = new Date(Math.min(...timestamps)).toISOString();
+    const endAt = new Date(Math.max(...timestamps)).toISOString();
+    
+    return {
+        statistics: {
+            average,
+            percentBelow5,
+            percentBelow10,
+            percentBetween10And30,
+            percentAbove30,
+            percentAbove50,
+            coefficientOfVariationPercentage
+        },
+        percentages: {
+            percentile_5,
+            percentile_25,
+            percentile_50,
+            percentile_75,
+            percentile_95
+        },
+        startAt,
+        endAt
+    };
+}
+
+// Calculate AGP statistics and percentiles for Chart.js component
+function calculateAGPStatistics(glucoseData) {
+    if (!glucoseData || glucoseData.length === 0) {
+        return {
+            statistics: {
+                average: 0,
+                percentBelow54: 0,
+                percentBelow70: 0,
+                percentBetween70And180: 0,
+                percentAbove180: 0,
+                percentAbove250: 0,
+                a1c: 0,
+                gmi: 0,
+                coefficientOfVariationPercentage: 0
+            },
+            percentages: {
+                percentile_5: Array(24).fill(0),
+                percentile_25: Array(24).fill(0),
+                percentile_50: Array(24).fill(0),
+                percentile_75: Array(24).fill(0),
+                percentile_95: Array(24).fill(0)
+            },
+            startAt: new Date().toISOString(),
+            endAt: new Date().toISOString()
+        };
+    }
+
+    const values = glucoseData.map(d => d.value);
+    const sortedValues = values.sort((a, b) => a - b);
+    
+    // Calculate basic statistics
+    const total = values.length;
+    const sum = values.reduce((a, b) => a + b, 0);
+    const average = Math.round(sum / total);
+    
+    // Calculate time in ranges
+    const below54 = values.filter(v => v < 54).length;
+    const below70 = values.filter(v => v < 70).length;
+    const between70And180 = values.filter(v => v >= 70 && v <= 180).length;
+    const above180 = values.filter(v => v > 180).length;
+    const above250 = values.filter(v => v > 250).length;
+    
+    const percentBelow54 = Math.round((below54 / total) * 100);
+    const percentBelow70 = Math.round((below70 / total) * 100);
+    const percentBetween70And180 = Math.round((between70And180 / total) * 100);
+    const percentAbove180 = Math.round((above180 / total) * 100);
+    const percentAbove250 = Math.round((above250 / total) * 100);
+    
+    // Calculate estimated A1C and GMI
+    const gmi = Math.round(((average + 46.7) / 28.7) * 10) / 10;
+    const a1c = gmi; // Simplified calculation
+    
+    // Calculate coefficient of variation
+    const variance = values.reduce((acc, val) => acc + Math.pow(val - average, 2), 0) / total;
+    const standardDeviation = Math.sqrt(variance);
+    const coefficientOfVariationPercentage = Math.round((standardDeviation / average) * 100);
+    
+    // Group data by hour for percentile calculations
+    const hourlyData = Array(24).fill(null).map(() => []);
+    
+    glucoseData.forEach(point => {
+        const hour = new Date(point.timestamp).getHours();
+        hourlyData[hour].push(point.value);
+    });
+    
+    // Calculate percentiles for each hour
+    const percentile_5 = [];
+    const percentile_25 = [];
+    const percentile_50 = [];
+    const percentile_75 = [];
+    const percentile_95 = [];
+    
+    for (let hour = 0; hour < 24; hour++) {
+        const hourValues = hourlyData[hour].sort((a, b) => a - b);
+        
+        if (hourValues.length === 0) {
+            // Use overall average if no data for this hour
+            percentile_5.push(average * 0.7);
+            percentile_25.push(average * 0.85);
+            percentile_50.push(average);
+            percentile_75.push(average * 1.15);
+            percentile_95.push(average * 1.3);
+        } else {
+            const getPercentile = (arr, p) => {
+                const index = Math.ceil(arr.length * p / 100) - 1;
+                return arr[Math.max(0, Math.min(index, arr.length - 1))];
+            };
+            
+            percentile_5.push(getPercentile(hourValues, 5));
+            percentile_25.push(getPercentile(hourValues, 25));
+            percentile_50.push(getPercentile(hourValues, 50));
+            percentile_75.push(getPercentile(hourValues, 75));
+            percentile_95.push(getPercentile(hourValues, 95));
+        }
+    }
+    
+    // Get date range
+    const timestamps = glucoseData.map(d => new Date(d.timestamp));
+    const startAt = new Date(Math.min(...timestamps)).toISOString();
+    const endAt = new Date(Math.max(...timestamps)).toISOString();
+    
+    return {
+        statistics: {
+            average,
+            percentBelow54,
+            percentBelow70,
+            percentBetween70And180,
+            percentAbove180,
+            percentAbove250,
+            a1c,
+            gmi,
+            coefficientOfVariationPercentage
+        },
+        percentages: {
+            percentile_5,
+            percentile_25,
+            percentile_50,
+            percentile_75,
+            percentile_95
+        },
+        startAt,
+        endAt
+    };
+}
+
+// GET /user-glucose-agp/:username
+// Returns glucose data for a specific user for AGP analysis
+app.get('/user-glucose-agp/:username', authenticateToken, async (req, res) => {
+    try {
+        const { username } = req.params;
+        console.log('=== DEBUG: Starting user-specific AGP glucose data request ===');
+        console.log('User:', req.user.username, 'Admin:', req.user.admin, 'Patients:', req.user.patients);
+        console.log('Requested patient:', username);
+        
+        // Check authorization - same logic as other user-specific endpoints
+        if (!req.user.admin && 
+            req.user.username !== username && 
+            !req.user.patients?.includes(username)) {
+            return res.status(403).json({ error: 'Not authorized to view this data' });
+        }
+
+        // Get specific user info
+        const allData = await getFileTrackerData();
+        const userInfo = allData.find(entry => entry.username === username);
+        
+        if (!userInfo) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        console.log('Found user info for:', username);
+
+        // Get glucose sensor data for this user
+        const db = client.db('s3-mongodb-db');
+        const dataCollection = db.collection('s3-mongodb-data-entries');
+        
+        const glucoseData = [];
+        
+        try {
+            if (userInfo.etag) {
+                console.log('Fetching glucose data for etag:', userInfo.etag);
+                const sensorDataResponse = await dataCollection.findOne({ etag: userInfo.etag });
+                
+                if (sensorDataResponse) {
+                    // Extract data points (handle both data structures)
+                    let dataPoints = [];
+                    if (sensorDataResponse.data && sensorDataResponse.data.data_points) {
+                        dataPoints = sensorDataResponse.data.data_points;
+                    } else if (sensorDataResponse.data_snapshot && sensorDataResponse.data_snapshot.data_points) {
+                        dataPoints = sensorDataResponse.data_snapshot.data_points;
+                    }
+                    
+                    console.log(`Found ${dataPoints.length} data points for user ${username}`);
+                    
+                    // Process each data point for glucose values only
+                    dataPoints.forEach(point => {
+                        // Parse timestamp
+                        let timestamp;
+                        try {
+                            if (point.timestamp && point.timestamp.$date && point.timestamp.$date.$numberLong) {
+                                timestamp = new Date(parseInt(point.timestamp.$date.$numberLong));
+                            } else if (point.timestamp && point.timestamp.$date) {
+                                timestamp = new Date(point.timestamp.$date);
+                            } else if (point.timestamp) {
+                                timestamp = new Date(point.timestamp);
+                            } else if (point.time) {
+                                const timeValue = point.time.$numberInt || point.time;
+                                timestamp = new Date(parseInt(timeValue) * 1000);
+                            } else {
+                                timestamp = new Date();
+                            }
+                        } catch (error) {
+                            timestamp = new Date();
+                        }
+
+                        // Extract glucose readings from both sensors
+                        const glucose1 = point['Glucose(mg/dL)'] && (point['Glucose(mg/dL)'].$numberDouble || point['Glucose(mg/dL)']);
+                        const glucose2 = point['Glucose(mg/dL)_2'] && (point['Glucose(mg/dL)_2'].$numberDouble || point['Glucose(mg/dL)_2']);
+                        
+                        // Calculate mean of the two glucose sensors if both are available
+                        const validGlucose1 = (glucose1 !== null && glucose1 !== undefined && !isNaN(glucose1)) ? parseFloat(glucose1) : null;
+                        const validGlucose2 = (glucose2 !== null && glucose2 !== undefined && !isNaN(glucose2)) ? parseFloat(glucose2) : null;
+                        
+                        let meanGlucose = null;
+                        if (validGlucose1 !== null && validGlucose2 !== null) {
+                            // Both sensors have data - calculate mean
+                            meanGlucose = (validGlucose1 + validGlucose2) / 2;
+                        } else if (validGlucose1 !== null) {
+                            // Only sensor 1 has data
+                            meanGlucose = validGlucose1;
+                        } else if (validGlucose2 !== null) {
+                            // Only sensor 2 has data
+                            meanGlucose = validGlucose2;
+                        }
+                        
+                        // Add the mean glucose value to the data if we have at least one valid reading
+                        if (meanGlucose !== null) {
+                            glucoseData.push({
+                                username: username,
+                                userID: userInfo.device_info ? userInfo.device_info.userID : null,
+                                deviceID: userInfo.device_info ? userInfo.device_info.deviceID : null,
+                                timestamp: timestamp,
+                                value: meanGlucose,
+                                sensor: 'mean', // Indicate this is the mean of both sensors
+                                glucose1: validGlucose1, // Keep original values for reference
+                                glucose2: validGlucose2
+                            });
+                        }
+                    });
+                }
+            }
+        } catch (userError) {
+            console.warn(`Could not fetch glucose data for user ${username}:`, userError.message);
+        }
+        
+        // Sort by timestamp
+        glucoseData.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        
+        console.log('=== User AGP Final Results ===');
+        console.log('Total glucose data points for', username, ':', glucoseData.length);
+        
+        // Calculate AGP statistics and percentiles
+        const agpResult = calculateAGPStatistics(glucoseData);
+        
+        res.json({
+            ...agpResult,
+            patientInfo: {
+                name: username,
+                userID: userInfo.device_info?.userID,
+                deviceID: userInfo.device_info?.deviceID,
+                gender: userInfo.device_info?.gender || 'Unknown',
+                age: userInfo.device_info?.age || 'Unknown',
+                device: userInfo.device_info?.deviceID || 'CGM Device'
+            }
+        });
+        
+    } catch (error) {
+        console.error('=== ERROR in user-specific AGP glucose data endpoint ===');
+        console.error('Error details:', error);
+        console.error('Stack trace:', error.stack);
+        res.status(500).json({ error: 'Failed to fetch glucose data for AGP analysis' });
+    }
+});
+
+// GET /user-cortisol-agp/:username
+// Returns cortisol data for a specific user for AGP-style analysis
+app.get('/user-cortisol-agp/:username', authenticateToken, async (req, res) => {
+    try {
+        const { username } = req.params;
+        console.log('=== DEBUG: Starting user-specific cortisol AGP data request ===');
+        console.log('User:', req.user.username, 'Admin:', req.user.admin, 'Patients:', req.user.patients);
+        console.log('Requested patient:', username);
+        
+        // Check authorization - same logic as other user-specific endpoints
+        if (!req.user.admin && 
+            req.user.username !== username && 
+            !req.user.patients?.includes(username)) {
+            return res.status(403).json({ error: 'Not authorized to view this data' });
+        }
+
+        // Get specific user info
+        const allData = await getFileTrackerData();
+        const userInfo = allData.find(entry => entry.username === username);
+        
+        if (!userInfo) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        console.log('Found user info for:', username);
+
+        // Get cortisol sensor data for this user
+        const db = client.db('s3-mongodb-db');
+        const dataCollection = db.collection('s3-mongodb-data-entries');
+        
+        const cortisolData = [];
+        
+        try {
+            if (userInfo.etag) {
+                console.log('Fetching cortisol data for etag:', userInfo.etag);
+                const sensorDataResponse = await dataCollection.findOne({ etag: userInfo.etag });
+                
+                if (sensorDataResponse) {
+                    // Extract data points (handle both data structures)
+                    let dataPoints = [];
+                    if (sensorDataResponse.data && sensorDataResponse.data.data_points) {
+                        dataPoints = sensorDataResponse.data.data_points;
+                    } else if (sensorDataResponse.data_snapshot && sensorDataResponse.data_snapshot.data_points) {
+                        dataPoints = sensorDataResponse.data_snapshot.data_points;
+                    }
+                    
+                    console.log(`Found ${dataPoints.length} data points for user ${username}`);
+                    
+                    // Process each data point for cortisol values only
+                    dataPoints.forEach(point => {
+                        // Parse timestamp
+                        let timestamp;
+                        try {
+                            if (point.timestamp && point.timestamp.$date && point.timestamp.$date.$numberLong) {
+                                timestamp = new Date(parseInt(point.timestamp.$date.$numberLong));
+                            } else if (point.timestamp && point.timestamp.$date) {
+                                timestamp = new Date(point.timestamp.$date);
+                            } else if (point.timestamp) {
+                                timestamp = new Date(point.timestamp);
+                            } else if (point.time) {
+                                const timeValue = point.time.$numberInt || point.time;
+                                timestamp = new Date(parseInt(timeValue) * 1000);
+                            } else {
+                                timestamp = new Date();
+                            }
+                        } catch (error) {
+                            timestamp = new Date();
+                        }
+
+                        // Extract cortisol readings from both sensors
+                        const cortisol1 = point['Cortisol(ng/mL)'] && (point['Cortisol(ng/mL)'].$numberDouble || point['Cortisol(ng/mL)']);
+                        const cortisol2 = point['Cortisol(ng/mL)_2'] && (point['Cortisol(ng/mL)_2'].$numberDouble || point['Cortisol(ng/mL)_2']);
+                        
+                        // Calculate mean of the two cortisol sensors if both are available
+                        const validCortisol1 = (cortisol1 !== null && cortisol1 !== undefined && !isNaN(cortisol1)) ? parseFloat(cortisol1) : null;
+                        const validCortisol2 = (cortisol2 !== null && cortisol2 !== undefined && !isNaN(cortisol2)) ? parseFloat(cortisol2) : null;
+                        
+                        let meanCortisol = null;
+                        if (validCortisol1 !== null && validCortisol2 !== null) {
+                            // Both sensors have data - calculate mean
+                            meanCortisol = (validCortisol1 + validCortisol2) / 2;
+                        } else if (validCortisol1 !== null) {
+                            // Only sensor 1 has data
+                            meanCortisol = validCortisol1;
+                        } else if (validCortisol2 !== null) {
+                            // Only sensor 2 has data
+                            meanCortisol = validCortisol2;
+                        }
+                        
+                        // Add the mean cortisol value to the data if we have at least one valid reading
+                        if (meanCortisol !== null) {
+                            cortisolData.push({
+                                username: username,
+                                userID: userInfo.device_info ? userInfo.device_info.userID : null,
+                                deviceID: userInfo.device_info ? userInfo.device_info.deviceID : null,
+                                timestamp: timestamp,
+                                value: meanCortisol,
+                                sensor: 'mean', // Indicate this is the mean of both sensors
+                                cortisol1: validCortisol1, // Keep original values for reference
+                                cortisol2: validCortisol2
+                            });
+                        }
+                    });
+                }
+            }
+        } catch (userError) {
+            console.warn(`Could not fetch cortisol data for user ${username}:`, userError.message);
+        }
+        
+        // Sort by timestamp
+        cortisolData.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        
+        console.log('=== User Cortisol AGP Final Results ===');
+        console.log('Total cortisol data points for', username, ':', cortisolData.length);
+        
+        // Calculate cortisol statistics and percentiles
+        const agpResult = calculateCortisolStatistics(cortisolData);
+        
+        res.json({
+            ...agpResult,
+            patientInfo: {
+                name: username,
+                userID: userInfo.device_info?.userID,
+                deviceID: userInfo.device_info?.deviceID,
+                gender: userInfo.device_info?.gender || 'Unknown',
+                age: userInfo.device_info?.age || 'Unknown',
+                device: userInfo.device_info?.deviceID || 'CGM Device'
+            }
+        });
+        
+    } catch (error) {
+        console.error('=== ERROR in user-specific cortisol AGP data endpoint ===');
+        console.error('Error details:', error);
+        console.error('Stack trace:', error.stack);
+        res.status(500).json({ error: 'Failed to fetch cortisol data for AGP analysis' });
     }
 });
 
