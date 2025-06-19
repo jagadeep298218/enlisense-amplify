@@ -496,18 +496,18 @@ const ViolinPlot = ({ sensorData, title = "Time Series Violin Plot Analysis" }) 
         
         // Generate sample data based on selected biomarker
         if (selectedBiomarkerForAUC === 'cortisol') {
-            // Generate cortisol values (typical range: 10-200 ng/mL)
-            // Category 1 (low cortisol): mostly 10-50
+            // Generate cortisol values (typical range: 0-20 ng/mL)
+            // Category 1 (low cortisol): mostly 2-8
             for (let i = 0; i < 30; i++) {
-                sampleValues.push(Math.random() * 40 + 10); // 10-50
+                sampleValues.push(Math.random() * 6 + 2); // 2-8
             }
-            // Category 2 (high cortisol): mostly 100-200
+            // Category 2 (high cortisol): mostly 12-20
             for (let i = 0; i < 25; i++) {
-                sampleValues.push(Math.random() * 100 + 100); // 100-200
+                sampleValues.push(Math.random() * 8 + 12); // 12-20
             }
             // Some intermediate values for realistic distribution
             for (let i = 0; i < 15; i++) {
-                sampleValues.push(Math.random() * 50 + 50); // 50-100
+                sampleValues.push(Math.random() * 4 + 8); // 8-12
             }
         } else {
             // Generate glucose values (typical range: 70-300 mg/dL)
@@ -954,10 +954,21 @@ const ViolinPlot = ({ sensorData, title = "Time Series Violin Plot Analysis" }) 
                                     onChange={(e) => setCategory1Threshold(e.target.value)}
                                     label="Category 1 Threshold"
                                 >
-                                    <MenuItem value={25}>≤ 25</MenuItem>
-                                    <MenuItem value={50}>≤ 50</MenuItem>
-                                    <MenuItem value={75}>≤ 75</MenuItem>
-                                    <MenuItem value={100}>≤ 100</MenuItem>
+                                    {selectedBiomarkerForAUC === 'cortisol' ? (
+                                        <>
+                                            <MenuItem value={2}>≤ 2</MenuItem>
+                                            <MenuItem value={5}>≤ 5</MenuItem>
+                                            <MenuItem value={8}>≤ 8</MenuItem>
+                                            <MenuItem value={10}>≤ 10</MenuItem>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <MenuItem value={25}>≤ 25</MenuItem>
+                                            <MenuItem value={50}>≤ 50</MenuItem>
+                                            <MenuItem value={75}>≤ 75</MenuItem>
+                                            <MenuItem value={100}>≤ 100</MenuItem>
+                                        </>
+                                    )}
                                 </Select>
                             </FormControl>
                         </Grid>
@@ -969,10 +980,21 @@ const ViolinPlot = ({ sensorData, title = "Time Series Violin Plot Analysis" }) 
                                     onChange={(e) => setCategory2Threshold(e.target.value)}
                                     label="Category 2 Threshold"
                                 >
-                                    <MenuItem value={100}>&gt; 100</MenuItem>
-                                    <MenuItem value={125}>&gt; 125</MenuItem>
-                                    <MenuItem value={150}>&gt; 150</MenuItem>
-                                    <MenuItem value={200}>&gt; 200</MenuItem>
+                                    {selectedBiomarkerForAUC === 'cortisol' ? (
+                                        <>
+                                            <MenuItem value={10}>&gt; 10</MenuItem>
+                                            <MenuItem value={12}>&gt; 12</MenuItem>
+                                            <MenuItem value={15}>&gt; 15</MenuItem>
+                                            <MenuItem value={18}>&gt; 18</MenuItem>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <MenuItem value={100}>&gt; 100</MenuItem>
+                                            <MenuItem value={125}>&gt; 125</MenuItem>
+                                            <MenuItem value={150}>&gt; 150</MenuItem>
+                                            <MenuItem value={200}>&gt; 200</MenuItem>
+                                        </>
+                                    )}
                                 </Select>
                             </FormControl>
                         </Grid>
@@ -1412,10 +1434,21 @@ const ViolinPlot = ({ sensorData, title = "Time Series Violin Plot Analysis" }) 
                                         onChange={(e) => setCategory1Threshold(e.target.value)}
                                         label="Category 1 Threshold"
                                     >
-                                        <MenuItem value={25}>≤ 25</MenuItem>
-                                        <MenuItem value={50}>≤ 50</MenuItem>
-                                        <MenuItem value={75}>≤ 75</MenuItem>
-                                        <MenuItem value={100}>≤ 100</MenuItem>
+                                        {selectedBiomarkerForAUC === 'cortisol' ? (
+                                            <>
+                                                <MenuItem value={2}>≤ 2</MenuItem>
+                                                <MenuItem value={5}>≤ 5</MenuItem>
+                                                <MenuItem value={8}>≤ 8</MenuItem>
+                                                <MenuItem value={10}>≤ 10</MenuItem>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <MenuItem value={25}>≤ 25</MenuItem>
+                                                <MenuItem value={50}>≤ 50</MenuItem>
+                                                <MenuItem value={75}>≤ 75</MenuItem>
+                                                <MenuItem value={100}>≤ 100</MenuItem>
+                                            </>
+                                        )}
                                     </Select>
                                 </FormControl>
                             </Grid>
@@ -1427,10 +1460,21 @@ const ViolinPlot = ({ sensorData, title = "Time Series Violin Plot Analysis" }) 
                                         onChange={(e) => setCategory2Threshold(e.target.value)}
                                         label="Category 2 Threshold"
                                     >
-                                        <MenuItem value={100}>&gt; 100</MenuItem>
-                                        <MenuItem value={125}>&gt; 125</MenuItem>
-                                        <MenuItem value={150}>&gt; 150</MenuItem>
-                                        <MenuItem value={200}>&gt; 200</MenuItem>
+                                        {selectedBiomarkerForAUC === 'cortisol' ? (
+                                            <>
+                                                <MenuItem value={10}>&gt; 10</MenuItem>
+                                                <MenuItem value={12}>&gt; 12</MenuItem>
+                                                <MenuItem value={15}>&gt; 15</MenuItem>
+                                                <MenuItem value={18}>&gt; 18</MenuItem>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <MenuItem value={100}>&gt; 100</MenuItem>
+                                                <MenuItem value={125}>&gt; 125</MenuItem>
+                                                <MenuItem value={150}>&gt; 150</MenuItem>
+                                                <MenuItem value={200}>&gt; 200</MenuItem>
+                                            </>
+                                        )}
                                     </Select>
                                 </FormControl>
                             </Grid>

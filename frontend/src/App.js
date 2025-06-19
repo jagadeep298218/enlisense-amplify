@@ -6,6 +6,8 @@ import UserVersions from './components/UserVersions';
 import Login from './components/Login';
 import AGPReport from './components/AGPReport';
 import AGPComparison from './components/AGPComparison';
+import BiomarkerConfig from './components/BiomarkerConfig';
+import PopulationAnalysis from './components/PopulationAnalysis';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -70,6 +72,26 @@ function App() {
             element={
               isAuthenticated ? (
                 <AGPComparison />
+              ) : (
+                <Navigate to="/" replace />
+              )
+            } 
+          />
+          <Route 
+            path="/admin/biomarker-config" 
+            element={
+              isAuthenticated ? (
+                <BiomarkerConfig />
+              ) : (
+                <Navigate to="/" replace />
+              )
+            } 
+          />
+          <Route 
+            path="/population-analysis" 
+            element={
+              isAuthenticated ? (
+                <PopulationAnalysis />
               ) : (
                 <Navigate to="/" replace />
               )

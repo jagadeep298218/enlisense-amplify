@@ -776,10 +776,83 @@ async function fetchUserAGPData(username, biomarkerType) {
             return { error: `No ${biomarkerType} data found for user ${username}. Check if the data contains ${biomarkerType}1 or ${biomarkerType}2 fields.` };
         }
 
-        // Calculate statistics
+        // Get applicable ranges for this user
+        let customRanges = null;
+        try {
+            const configCollection = db.collection('biomarker_configs');
+            const configDoc = await configCollection.findOne({ type: 'biomarker_ranges' });
+            
+            console.log(`=== DEBUGGING CUSTOM RANGES for ${username} ===`);
+            console.log('Config document exists:', !!configDoc);
+            console.log('Biomarker type:', biomarkerType);
+            console.log('User personal info exists:', !!userFileInfo.personal_information);
+            if (userFileInfo.personal_information) {
+                console.log('Personal info keys:', Object.keys(userFileInfo.personal_information));
+                console.log('Personal info values:', userFileInfo.personal_information);
+            }
+            
+            if (configDoc && configDoc.configs[biomarkerType] && userFileInfo.personal_information) {
+                const personalInfo = userFileInfo.personal_information;
+                const deviceInfo = userFileInfo.device_info;
+                const applicableConditions = [];
+
+                // Check for applicable conditions
+                if (personalInfo.pregnant === true) applicableConditions.push('pregnancy');
+                if (personalInfo.Diabete === true || personalInfo.diabete === true || personalInfo.diabetes === true) {
+                    applicableConditions.push('type2_diabetes');
+                }
+                if (personalInfo.smokes === true) applicableConditions.push('smoking');
+                if (personalInfo.drinks === true) applicableConditions.push('drinking');
+                if (personalInfo['High BP'] === true || personalInfo.hypertension === true) {
+                    applicableConditions.push('hypertension');
+                }
+                
+                const age = deviceInfo?.age || personalInfo.age;
+                if (age && (parseInt(age) < 18 || age < 18)) {
+                    applicableConditions.push('pediatric');
+                }
+
+                console.log('Applicable conditions found:', applicableConditions);
+                
+                // Get custom ranges if conditions apply
+                if (applicableConditions.length > 0) {
+                    const biomarkerConfig = configDoc.configs[biomarkerType];
+                    const applicableRanges = [];
+                    
+                    console.log('Available conditions in config:', Object.keys(biomarkerConfig.conditions || {}));
+                    
+                    for (const condition of applicableConditions) {
+                        if (biomarkerConfig.conditions[condition]) {
+                            console.log(`Found config for condition: ${condition}`);
+                            applicableRanges.push(biomarkerConfig.conditions[condition].ranges);
+                        } else {
+                            console.log(`No config found for condition: ${condition}`);
+                        }
+                    }
+                    
+                    if (applicableRanges.length > 0) {
+                        if (applicableRanges.length === 1) {
+                            customRanges = applicableRanges[0];
+                        } else {
+                            // Average the ranges across multiple conditions
+                            customRanges = averageRanges(applicableRanges, biomarkerType);
+                        }
+                        console.log('Final custom ranges applied:', customRanges);
+                    } else {
+                        console.log('No applicable ranges found despite having conditions');
+                    }
+                } else {
+                    console.log('No applicable conditions detected');
+                }
+            }
+        } catch (error) {
+            console.log('Could not fetch custom ranges, using defaults:', error.message);
+        }
+
+        // Calculate statistics with custom ranges
         const statistics = biomarkerType === 'glucose' 
-            ? calculateAGPStatistics(biomarkerData)
-            : calculateCortisolStatistics(biomarkerData);
+            ? calculateAGPStatistics(biomarkerData, customRanges)
+            : calculateCortisolStatistics(biomarkerData, customRanges);
 
         // Calculate hourly percentiles for AGP chart
         const hourlyData = Array(24).fill(null).map(() => []);
@@ -846,6 +919,402 @@ async function fetchUserAGPData(username, biomarkerType) {
         console.error(`Error fetching AGP data for ${username}:`, error);
         return { error: `Failed to fetch data for user ${username}` };
     }
+}
+
+// Admin Biomarker Configuration Endpoints
+// GET /admin/auth-test - Test admin authentication
+app.get('/admin/auth-test', authenticateToken, async (req, res) => {
+    try {
+        console.log('Auth test request from:', req.user.username, 'Admin:', req.user.admin);
+        res.json({
+            username: req.user.username,
+            isAdmin: req.user.admin,
+            message: req.user.admin ? 'Admin access confirmed' : 'Not an admin user'
+        });
+    } catch (error) {
+        console.error('Auth test error:', error);
+        res.status(500).json({ error: 'Authentication test failed' });
+    }
+});
+
+// GET /admin/biomarker-configs - Get current biomarker range configurations
+app.get('/admin/biomarker-configs', authenticateToken, async (req, res) => {
+    try {
+        // Check if user is admin
+        if (!req.user.admin) {
+            return res.status(403).json({ error: 'Only administrators can access biomarker configurations' });
+        }
+
+        const db = client.db('s3-mongodb-db');
+        const configCollection = db.collection('biomarker_configs');
+        
+        // Get the current configuration or return defaults
+        let config = await configCollection.findOne({ type: 'biomarker_ranges' });
+        
+        if (!config) {
+            // Return default configuration if none exists
+            config = {
+                type: 'biomarker_ranges',
+                configs: {
+                    glucose: {
+                        default: {
+                            veryLow: { min: 0, max: 54 },
+                            low: { min: 54, max: 70 },
+                            target: { min: 70, max: 180 },
+                            high: { min: 180, max: 250 },
+                            veryHigh: { min: 250, max: 400 }
+                        },
+                        conditions: {}
+                    },
+                    cortisol: {
+                        default: {
+                            veryLow: { min: 0, max: 5 },
+                            low: { min: 5, max: 10 },
+                            normal: { min: 10, max: 30 },
+                            high: { min: 30, max: 50 },
+                            veryHigh: { min: 50, max: 100 }
+                        },
+                        conditions: {}
+                    }
+                },
+                createdAt: new Date(),
+                updatedAt: new Date()
+            };
+        }
+
+        res.json({ configs: config.configs });
+
+    } catch (error) {
+        console.error('Error fetching biomarker configurations:', error);
+        res.status(500).json({ error: 'Failed to fetch biomarker configurations' });
+    }
+});
+
+// POST /admin/biomarker-configs - Save biomarker range configurations
+app.post('/admin/biomarker-configs', authenticateToken, async (req, res) => {
+    try {
+        console.log('Save request from user:', req.user.username, 'Admin status:', req.user.admin);
+        console.log('Request body size:', JSON.stringify(req.body).length);
+        
+        // Check if user is admin
+        if (!req.user.admin) {
+            console.log('Access denied - user is not admin');
+            return res.status(403).json({ error: 'Only administrators can modify biomarker configurations' });
+        }
+
+        const { configs } = req.body;
+        
+        if (!configs) {
+            console.log('No configs in request body');
+            return res.status(400).json({ error: 'Configurations data is required' });
+        }
+        
+        console.log('Configs structure:', Object.keys(configs));
+        console.log('Glucose config exists:', !!configs.glucose);
+        console.log('Cortisol config exists:', !!configs.cortisol);
+
+        const db = client.db('s3-mongodb-db');
+        const configCollection = db.collection('biomarker_configs');
+        
+        console.log('Attempting to save to MongoDB...');
+        
+        // Upsert the configuration
+        const result = await configCollection.updateOne(
+            { type: 'biomarker_ranges' },
+            {
+                $set: {
+                    configs: configs,
+                    updatedAt: new Date(),
+                    updatedBy: req.user.username
+                },
+                $setOnInsert: {
+                    type: 'biomarker_ranges',
+                    createdAt: new Date(),
+                    createdBy: req.user.username
+                }
+            },
+            { upsert: true }
+        );
+
+        console.log('Biomarker configuration saved by admin:', req.user.username);
+        res.json({ 
+            success: true, 
+            message: 'Biomarker configurations saved successfully',
+            modified: result.modifiedCount,
+            upserted: result.upsertedCount
+        });
+
+    } catch (error) {
+        console.error('Error saving biomarker configurations:', error);
+        res.status(500).json({ error: 'Failed to save biomarker configurations' });
+    }
+});
+
+// GET /admin/biomarker-configs/:biomarker - Get specific range configuration for AGP reports (default condition)
+app.get('/admin/biomarker-configs/:biomarker', authenticateToken, async (req, res) => {
+    try {
+        const { biomarker } = req.params;
+        const condition = 'default';
+        
+        if (!['glucose', 'cortisol'].includes(biomarker)) {
+            return res.status(400).json({ error: 'Invalid biomarker type' });
+        }
+
+        const db = client.db('s3-mongodb-db');
+        const configCollection = db.collection('biomarker_configs');
+        
+        const config = await configCollection.findOne({ type: 'biomarker_ranges' });
+        
+        if (!config || !config.configs[biomarker]) {
+            // Return default ranges if no custom configuration exists
+            const defaultRanges = {
+                glucose: {
+                    veryLow: { min: 0, max: 54 },
+                    low: { min: 54, max: 70 },
+                    target: { min: 70, max: 180 },
+                    high: { min: 180, max: 250 },
+                    veryHigh: { min: 250, max: 400 }
+                },
+                cortisol: {
+                    veryLow: { min: 0, max: 5 },
+                    low: { min: 5, max: 10 },
+                    normal: { min: 10, max: 30 },
+                    high: { min: 30, max: 50 },
+                    veryHigh: { min: 50, max: 100 }
+                }
+            };
+            
+            return res.json({ ranges: defaultRanges[biomarker] });
+        }
+
+        // Get the specific condition ranges or default
+        let ranges;
+        if (condition === 'default') {
+            ranges = config.configs[biomarker].default;
+        } else {
+            ranges = config.configs[biomarker].conditions[condition]?.ranges || config.configs[biomarker].default;
+        }
+
+        res.json({ ranges });
+
+    } catch (error) {
+        console.error('Error fetching specific biomarker configuration:', error);
+        res.status(500).json({ error: 'Failed to fetch biomarker configuration' });
+    }
+});
+
+// GET /admin/biomarker-configs/:biomarker/:condition - Get specific range configuration for AGP reports (specific condition)
+app.get('/admin/biomarker-configs/:biomarker/:condition', authenticateToken, async (req, res) => {
+    try {
+        const { biomarker, condition } = req.params;
+        
+        if (!['glucose', 'cortisol'].includes(biomarker)) {
+            return res.status(400).json({ error: 'Invalid biomarker type' });
+        }
+
+        const db = client.db('s3-mongodb-db');
+        const configCollection = db.collection('biomarker_configs');
+        
+        const config = await configCollection.findOne({ type: 'biomarker_ranges' });
+        
+        if (!config || !config.configs[biomarker]) {
+            // Return default ranges if no custom configuration exists
+            const defaultRanges = {
+                glucose: {
+                    veryLow: { min: 0, max: 54 },
+                    low: { min: 54, max: 70 },
+                    target: { min: 70, max: 180 },
+                    high: { min: 180, max: 250 },
+                    veryHigh: { min: 250, max: 400 }
+                },
+                cortisol: {
+                    veryLow: { min: 0, max: 5 },
+                    low: { min: 5, max: 10 },
+                    normal: { min: 10, max: 30 },
+                    high: { min: 30, max: 50 },
+                    veryHigh: { min: 50, max: 100 }
+                }
+            };
+            
+            return res.json({ ranges: defaultRanges[biomarker] });
+        }
+
+        // Get the specific condition ranges or default
+        let ranges;
+        if (condition === 'default') {
+            ranges = config.configs[biomarker].default;
+        } else {
+            ranges = config.configs[biomarker].conditions[condition]?.ranges || config.configs[biomarker].default;
+        }
+
+        res.json({ ranges });
+
+    } catch (error) {
+        console.error('Error fetching specific biomarker configuration:', error);
+        res.status(500).json({ error: 'Failed to fetch biomarker configuration' });
+    }
+});
+
+// GET /user-applicable-ranges/:username/:biomarker - Get applicable biomarker ranges based on user's personal information
+app.get('/user-applicable-ranges/:username/:biomarker', authenticateToken, async (req, res) => {
+    try {
+        const { username, biomarker } = req.params;
+        
+        // Check authorization
+        if (!req.user.admin && 
+            req.user.username !== username && 
+            !req.user.patients?.includes(username)) {
+            return res.status(403).json({ error: 'Not authorized to view this data' });
+        }
+
+        const db = client.db('s3-mongodb-db');
+        
+        // Get user's personal information
+        const userCollection = db.collection('s3-mongodb-data-entries');
+        const userRecord = await userCollection.findOne(
+            { username: username },
+            { projection: { personal_information: 1, device_info: 1 } }
+        );
+        
+        if (!userRecord || !userRecord.personal_information) {
+            // Return default ranges if no personal information
+            return res.json({
+                applicableConditions: ['default'],
+                personalInfo: null,
+                ranges: null,
+                useDefault: true
+            });
+        }
+
+        // Map personal information fields to condition names
+        const personalInfo = userRecord.personal_information;
+        const deviceInfo = userRecord.device_info;
+        const applicableConditions = [];
+
+        // Check for applicable conditions based on personal information
+        if (personalInfo.pregnant === true) {
+            applicableConditions.push('pregnancy');
+        }
+        if (personalInfo.Diabete === true || personalInfo.diabete === true || personalInfo.diabetes === true) {
+            // For now, default to type2_diabetes. Could be enhanced to differentiate
+            applicableConditions.push('type2_diabetes');
+        }
+        if (personalInfo.smokes === true) {
+            applicableConditions.push('smoking');
+        }
+        if (personalInfo.drinks === true) {
+            applicableConditions.push('drinking');
+        }
+        if (personalInfo['High BP'] === true || personalInfo.hypertension === true) {
+            applicableConditions.push('hypertension');
+        }
+        
+        // Check age for pediatric condition
+        const age = deviceInfo?.age || personalInfo.age;
+        if (age && (parseInt(age) < 18 || age < 18)) {
+            applicableConditions.push('pediatric');
+        }
+
+        // If no specific conditions apply, use default
+        if (applicableConditions.length === 0) {
+            return res.json({
+                applicableConditions: ['default'],
+                personalInfo: personalInfo,
+                ranges: null,
+                useDefault: true
+            });
+        }
+
+        // Fetch configurations for applicable conditions from the new storage format
+        const configCollection = db.collection('biomarker_configs');
+        const configDoc = await configCollection.findOne({ type: 'biomarker_ranges' });
+
+        if (!configDoc || !configDoc.configs[biomarker]) {
+            return res.json({
+                applicableConditions: applicableConditions,
+                personalInfo: personalInfo,
+                ranges: null,
+                useDefault: true,
+                message: `Conditions detected: ${applicableConditions.join(', ')}, but no custom ranges configured. Using default ranges.`
+            });
+        }
+
+        const biomarkerConfig = configDoc.configs[biomarker];
+        const applicableRanges = [];
+        
+        // Find ranges for applicable conditions
+        for (const condition of applicableConditions) {
+            if (biomarkerConfig.conditions[condition]) {
+                applicableRanges.push({
+                    condition: condition,
+                    ranges: biomarkerConfig.conditions[condition].ranges,
+                    name: biomarkerConfig.conditions[condition].name
+                });
+            }
+        }
+
+        // If no custom configs found, return default
+        if (applicableRanges.length === 0) {
+            return res.json({
+                applicableConditions: applicableConditions,
+                personalInfo: personalInfo,
+                ranges: biomarkerConfig.default,
+                useDefault: true,
+                message: `Conditions detected: ${applicableConditions.join(', ')}, but no custom ranges configured. Using default ranges.`
+            });
+        }
+
+        // Calculate average ranges if multiple conditions apply
+        let finalRanges;
+        let usedConditions;
+        
+        if (applicableRanges.length === 1) {
+            finalRanges = applicableRanges[0].ranges;
+            usedConditions = [applicableRanges[0].name];
+        } else {
+            // Average the ranges across multiple conditions
+            finalRanges = averageRanges(applicableRanges.map(config => config.ranges), biomarker);
+            usedConditions = applicableRanges.map(config => config.name);
+        }
+
+        res.json({
+            applicableConditions: applicableConditions,
+            personalInfo: personalInfo,
+            ranges: finalRanges,
+            useDefault: false,
+            configsUsed: usedConditions,
+            message: applicableRanges.length > 1 ? 
+                `Multiple conditions detected (${usedConditions.join(', ')}). Using averaged ranges.` :
+                `Condition detected: ${usedConditions[0]}. Using custom ranges.`
+        });
+
+    } catch (error) {
+        console.error('Error fetching applicable ranges:', error);
+        res.status(500).json({ error: 'Failed to fetch applicable ranges' });
+    }
+});
+
+// Helper function to average ranges across multiple conditions
+function averageRanges(rangesList, biomarker) {
+    const rangeKeys = biomarker === 'glucose' 
+        ? ['veryLow', 'low', 'target', 'high', 'veryHigh']
+        : ['veryLow', 'low', 'normal', 'high', 'veryHigh'];
+    
+    const averagedRanges = {};
+    
+    rangeKeys.forEach(key => {
+        const minValues = rangesList.map(ranges => ranges[key]?.min || 0).filter(val => val > 0);
+        const maxValues = rangesList.map(ranges => ranges[key]?.max || 0).filter(val => val > 0);
+        
+        if (minValues.length > 0 && maxValues.length > 0) {
+            averagedRanges[key] = {
+                min: Math.round(minValues.reduce((sum, val) => sum + val, 0) / minValues.length),
+                max: Math.round(maxValues.reduce((sum, val) => sum + val, 0) / maxValues.length)
+            };
+        }
+    });
+    
+    return averagedRanges;
 }
 
 // Helper function to get users accessible to the current user
@@ -1179,7 +1648,7 @@ app.get('/aggregated-data/filtered', authenticateToken, async (req, res) => {
 
 
 // Calculate cortisol statistics and percentiles for Chart.js component
-function calculateCortisolStatistics(cortisolData) {
+function calculateCortisolStatistics(cortisolData, customRanges = null) {
     if (!cortisolData || cortisolData.length === 0) {
         return {
             statistics: {
@@ -1211,19 +1680,58 @@ function calculateCortisolStatistics(cortisolData) {
     const sum = values.reduce((a, b) => a + b, 0);
     const average = Math.round((sum / total) * 1000) / 1000; // Round to 3 decimal places for cortisol
     
-    // Calculate time in ranges for cortisol (ng/mL)
-    // Normal cortisol ranges: Low <5, Normal 5-30, High >30, Very High >50
-    const below5 = values.filter(v => v < 5).length;
-    const below10 = values.filter(v => v < 10).length;
-    const between10And30 = values.filter(v => v >= 10 && v <= 30).length;
-    const above30 = values.filter(v => v > 30).length;
-    const above50 = values.filter(v => v > 50).length;
+    // Get range thresholds (custom or default)
+    let veryLowMax, lowMax, normalMin, normalMax, highMax;
     
-    const percentBelow5 = Math.round((below5 / total) * 100);
-    const percentBelow10 = Math.round((below10 / total) * 100);
-    const percentBetween10And30 = Math.round((between10And30 / total) * 100);
-    const percentAbove30 = Math.round((above30 / total) * 100);
-    const percentAbove50 = Math.round((above50 / total) * 100);
+    if (customRanges) {
+        veryLowMax = customRanges.veryLow?.max || 5;
+        lowMax = customRanges.low?.max || 10;
+        normalMin = customRanges.normal?.min || 10;
+        normalMax = customRanges.normal?.max || 30;
+        highMax = customRanges.high?.max || 50;
+    } else {
+        // Default cortisol ranges (0-20 ng/mL scale)
+        veryLowMax = 2;
+        lowMax = 5;
+        normalMin = 5;
+        normalMax = 15;
+        highMax = 20;
+    }
+    
+    // Debug logging for range verification
+    console.log(`Cortisol Stats Calculation - Custom ranges provided: ${!!customRanges}`);
+    if (customRanges) {
+        console.log(`Using custom cortisol ranges: VeryLow<${veryLowMax}, Low<${lowMax}, Normal:${normalMin}-${normalMax}, High>${normalMax}, VeryHigh>${highMax}`);
+    } else {
+        console.log(`Using default cortisol ranges: VeryLow<${veryLowMax}, Low<${lowMax}, Normal:${normalMin}-${normalMax}, High>${normalMax}, VeryHigh>${highMax}`);
+    }
+
+    // Calculate actual time in ranges for cortisol (assuming 15-minute intervals)
+    const readingIntervalMinutes = 15; // Standard sensor reading interval
+    const totalWearTimeMinutes = total * readingIntervalMinutes;
+    
+    // Calculate time spent in each range
+    const belowVeryLow = values.filter(v => v < veryLowMax).length;
+    const belowLow = values.filter(v => v < lowMax).length;
+    const inNormal = values.filter(v => v >= normalMin && v <= normalMax).length;
+    const aboveNormal = values.filter(v => v > normalMax).length;
+    const aboveHigh = values.filter(v => v > highMax).length;
+    
+    // Calculate actual time spent in each range (in minutes)
+    const timeVeryLowMinutes = belowVeryLow * readingIntervalMinutes;
+    const timeLowMinutes = (belowLow - belowVeryLow) * readingIntervalMinutes;
+    const timeNormalMinutes = inNormal * readingIntervalMinutes;
+    const timeHighMinutes = (aboveNormal - aboveHigh) * readingIntervalMinutes;
+    const timeVeryHighMinutes = aboveHigh * readingIntervalMinutes;
+    
+    // Calculate percentages based on actual wear time
+    const percentBelow5 = totalWearTimeMinutes > 0 ? Math.round((timeVeryLowMinutes / totalWearTimeMinutes) * 100) : 0;
+    const percentBelow10 = totalWearTimeMinutes > 0 ? Math.round(((timeVeryLowMinutes + timeLowMinutes) / totalWearTimeMinutes) * 100) : 0;
+    const percentBetween10And30 = totalWearTimeMinutes > 0 ? Math.round((timeNormalMinutes / totalWearTimeMinutes) * 100) : 0;
+    const percentAbove30 = totalWearTimeMinutes > 0 ? Math.round(((timeHighMinutes + timeVeryHighMinutes) / totalWearTimeMinutes) * 100) : 0;
+    const percentAbove50 = totalWearTimeMinutes > 0 ? Math.round((timeVeryHighMinutes / totalWearTimeMinutes) * 100) : 0;
+    
+    console.log(`Cortisol wear time: ${total} readings × ${readingIntervalMinutes} min = ${totalWearTimeMinutes} min (${Math.round(totalWearTimeMinutes/60*100)/100} hours)`);
     
     // Calculate coefficient of variation
     const variance = values.reduce((acc, val) => acc + Math.pow(val - average, 2), 0) / total;
@@ -1274,30 +1782,38 @@ function calculateCortisolStatistics(cortisolData) {
     const startAt = new Date(Math.min(...timestamps)).toISOString();
     const endAt = new Date(Math.max(...timestamps)).toISOString();
     
-    return {
-        statistics: {
-            average,
-            percentBelow5,
-            percentBelow10,
-            percentBetween10And30,
-            percentAbove30,
-            percentAbove50,
-            coefficientOfVariationPercentage
-        },
-        percentages: {
-            percentile_5,
-            percentile_25,
-            percentile_50,
-            percentile_75,
-            percentile_95
-        },
-        startAt,
-        endAt
-    };
+            return {
+            statistics: {
+                average,
+                percentBelow5,
+                percentBelow10,
+                percentBetween10And30,
+                percentAbove30,
+                percentAbove50,
+                coefficientOfVariationPercentage,
+                // Add actual time information
+                totalWearTimeMinutes,
+                totalWearTimeHours: Math.round(totalWearTimeMinutes/60*100)/100,
+                timeVeryLowMinutes,
+                timeLowMinutes,
+                timeNormalMinutes,
+                timeHighMinutes,
+                timeVeryHighMinutes
+            },
+            percentages: {
+                percentile_5,
+                percentile_25,
+                percentile_50,
+                percentile_75,
+                percentile_95
+            },
+            startAt,
+            endAt
+        };
 }
 
 // Calculate AGP statistics and percentiles for Chart.js component
-function calculateAGPStatistics(glucoseData) {
+function calculateAGPStatistics(glucoseData, customRanges = null) {
     if (!glucoseData || glucoseData.length === 0) {
         return {
             statistics: {
@@ -1331,18 +1847,59 @@ function calculateAGPStatistics(glucoseData) {
     const sum = values.reduce((a, b) => a + b, 0);
     const average = Math.round(sum / total);
     
-    // Calculate time in ranges
-    const below54 = values.filter(v => v < 54).length;
-    const below70 = values.filter(v => v < 70).length;
-    const between70And180 = values.filter(v => v >= 70 && v <= 180).length;
-    const above180 = values.filter(v => v > 180).length;
-    const above250 = values.filter(v => v > 250).length;
+    // Get range thresholds (custom or default)
+    let veryLowMax, lowMax, targetMin, targetMax, highMax;
     
-    const percentBelow54 = Math.round((below54 / total) * 100);
-    const percentBelow70 = Math.round((below70 / total) * 100);
-    const percentBetween70And180 = Math.round((between70And180 / total) * 100);
-    const percentAbove180 = Math.round((above180 / total) * 100);
-    const percentAbove250 = Math.round((above250 / total) * 100);
+    if (customRanges) {
+        veryLowMax = customRanges.veryLow?.max || 54;
+        lowMax = customRanges.low?.max || 70;
+        targetMin = customRanges.target?.min || 70;
+        targetMax = customRanges.target?.max || 180;
+        highMax = customRanges.high?.max || 250;
+    } else {
+        // Default glucose ranges
+        veryLowMax = 54;
+        lowMax = 70;
+        targetMin = 70;
+        targetMax = 180;
+        highMax = 250;
+    }
+    
+    // Debug logging for range verification
+    console.log(`AGP Stats Calculation - Custom ranges provided: ${!!customRanges}`);
+    if (customRanges) {
+        console.log(`Using custom glucose ranges: VeryLow<${veryLowMax}, Low<${lowMax}, Target:${targetMin}-${targetMax}, High>${targetMax}, VeryHigh>${highMax}`);
+    } else {
+        console.log(`Using default glucose ranges: VeryLow<${veryLowMax}, Low<${lowMax}, Target:${targetMin}-${targetMax}, High>${targetMax}, VeryHigh>${highMax}`);
+    }
+
+    // Calculate actual time in ranges (assuming 15-minute intervals between readings)
+    const readingIntervalMinutes = 15; // Standard CGM reading interval
+    const totalWearTimeMinutes = total * readingIntervalMinutes;
+    
+    // Calculate time spent in each range
+    const belowVeryLow = values.filter(v => v < veryLowMax).length;
+    const belowLow = values.filter(v => v < lowMax).length;
+    const inTarget = values.filter(v => v >= targetMin && v <= targetMax).length;
+    const aboveTarget = values.filter(v => v > targetMax).length;
+    const aboveHigh = values.filter(v => v > highMax).length;
+    
+    // Calculate actual time spent in each range (in minutes)
+    const timeVeryLowMinutes = belowVeryLow * readingIntervalMinutes;
+    const timeLowMinutes = (belowLow - belowVeryLow) * readingIntervalMinutes;
+    const timeTargetMinutes = inTarget * readingIntervalMinutes;
+    const timeHighMinutes = (aboveTarget - aboveHigh) * readingIntervalMinutes;
+    const timeVeryHighMinutes = aboveHigh * readingIntervalMinutes;
+    
+    // Calculate percentages based on actual wear time
+    const percentBelow54 = totalWearTimeMinutes > 0 ? Math.round((timeVeryLowMinutes / totalWearTimeMinutes) * 100) : 0;
+    const percentBelow70 = totalWearTimeMinutes > 0 ? Math.round(((timeVeryLowMinutes + timeLowMinutes) / totalWearTimeMinutes) * 100) : 0;
+    const percentBetween70And180 = totalWearTimeMinutes > 0 ? Math.round((timeTargetMinutes / totalWearTimeMinutes) * 100) : 0;
+    const percentAbove180 = totalWearTimeMinutes > 0 ? Math.round(((timeHighMinutes + timeVeryHighMinutes) / totalWearTimeMinutes) * 100) : 0;
+    const percentAbove250 = totalWearTimeMinutes > 0 ? Math.round((timeVeryHighMinutes / totalWearTimeMinutes) * 100) : 0;
+    
+    console.log(`Wear time calculation: ${total} readings × ${readingIntervalMinutes} min = ${totalWearTimeMinutes} min (${Math.round(totalWearTimeMinutes/60*100)/100} hours)`);
+    console.log(`Time in target range: ${timeTargetMinutes} minutes (${Math.round(timeTargetMinutes/60*100)/100} hours) = ${percentBetween70And180}%`);
     
     // Calculate estimated A1C and GMI
     const gmi = Math.round(((average + 46.7) / 28.7) * 10) / 10;
@@ -1407,7 +1964,15 @@ function calculateAGPStatistics(glucoseData) {
             percentAbove250,
             a1c,
             gmi,
-            coefficientOfVariationPercentage
+            coefficientOfVariationPercentage,
+            // Add actual time information
+            totalWearTimeMinutes,
+            totalWearTimeHours: Math.round(totalWearTimeMinutes/60*100)/100,
+            timeVeryLowMinutes,
+            timeLowMinutes,
+            timeTargetMinutes,
+            timeHighMinutes,
+            timeVeryHighMinutes
         },
         percentages: {
             percentile_5,
@@ -1536,8 +2101,60 @@ app.get('/user-glucose-agp/:username', authenticateToken, async (req, res) => {
         console.log('=== User AGP Final Results ===');
         console.log('Total glucose data points for', username, ':', glucoseData.length);
         
+        // Get applicable ranges for this user
+        let customRanges = null;
+        try {
+            const configCollection = db.collection('biomarker_configs');
+            const configDoc = await configCollection.findOne({ type: 'biomarker_ranges' });
+            
+            if (configDoc && configDoc.configs.glucose && userInfo.personal_information) {
+                const personalInfo = userInfo.personal_information;
+                const deviceInfo = userInfo.device_info;
+                const applicableConditions = [];
+
+                // Check for applicable conditions
+                if (personalInfo.pregnant === true) applicableConditions.push('pregnancy');
+                if (personalInfo.Diabete === true || personalInfo.diabete === true || personalInfo.diabetes === true) {
+                    applicableConditions.push('type2_diabetes');
+                }
+                if (personalInfo.smokes === true) applicableConditions.push('smoking');
+                if (personalInfo.drinks === true) applicableConditions.push('drinking');
+                if (personalInfo['High BP'] === true || personalInfo.hypertension === true) {
+                    applicableConditions.push('hypertension');
+                }
+                
+                const age = deviceInfo?.age || personalInfo.age;
+                if (age && (parseInt(age) < 18 || age < 18)) {
+                    applicableConditions.push('pediatric');
+                }
+
+                // Get custom ranges if conditions apply
+                if (applicableConditions.length > 0) {
+                    const biomarkerConfig = configDoc.configs.glucose;
+                    const applicableRanges = [];
+                    
+                    for (const condition of applicableConditions) {
+                        if (biomarkerConfig.conditions[condition]) {
+                            applicableRanges.push(biomarkerConfig.conditions[condition].ranges);
+                        }
+                    }
+                    
+                    if (applicableRanges.length > 0) {
+                        if (applicableRanges.length === 1) {
+                            customRanges = applicableRanges[0];
+                        } else {
+                            // Average the ranges across multiple conditions
+                            customRanges = averageRanges(applicableRanges, 'glucose');
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            console.log('Could not fetch custom ranges for glucose AGP, using defaults:', error.message);
+        }
+
         // Calculate AGP statistics and percentiles
-        const agpResult = calculateAGPStatistics(glucoseData);
+        const agpResult = calculateAGPStatistics(glucoseData, customRanges);
         
         res.json({
             ...agpResult,
@@ -1674,8 +2291,60 @@ app.get('/user-cortisol-agp/:username', authenticateToken, async (req, res) => {
         console.log('=== User Cortisol AGP Final Results ===');
         console.log('Total cortisol data points for', username, ':', cortisolData.length);
         
+        // Get applicable ranges for this user
+        let customRanges = null;
+        try {
+            const configCollection = db.collection('biomarker_configs');
+            const configDoc = await configCollection.findOne({ type: 'biomarker_ranges' });
+            
+            if (configDoc && configDoc.configs.cortisol && userInfo.personal_information) {
+                const personalInfo = userInfo.personal_information;
+                const deviceInfo = userInfo.device_info;
+                const applicableConditions = [];
+
+                // Check for applicable conditions
+                if (personalInfo.pregnant === true) applicableConditions.push('pregnancy');
+                if (personalInfo.Diabete === true || personalInfo.diabete === true || personalInfo.diabetes === true) {
+                    applicableConditions.push('type2_diabetes');
+                }
+                if (personalInfo.smokes === true) applicableConditions.push('smoking');
+                if (personalInfo.drinks === true) applicableConditions.push('drinking');
+                if (personalInfo['High BP'] === true || personalInfo.hypertension === true) {
+                    applicableConditions.push('hypertension');
+                }
+                
+                const age = deviceInfo?.age || personalInfo.age;
+                if (age && (parseInt(age) < 18 || age < 18)) {
+                    applicableConditions.push('pediatric');
+                }
+
+                // Get custom ranges if conditions apply
+                if (applicableConditions.length > 0) {
+                    const biomarkerConfig = configDoc.configs.cortisol;
+                    const applicableRanges = [];
+                    
+                    for (const condition of applicableConditions) {
+                        if (biomarkerConfig.conditions[condition]) {
+                            applicableRanges.push(biomarkerConfig.conditions[condition].ranges);
+                        }
+                    }
+                    
+                    if (applicableRanges.length > 0) {
+                        if (applicableRanges.length === 1) {
+                            customRanges = applicableRanges[0];
+                        } else {
+                            // Average the ranges across multiple conditions
+                            customRanges = averageRanges(applicableRanges, 'cortisol');
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            console.log('Could not fetch custom ranges for cortisol AGP, using defaults:', error.message);
+        }
+
         // Calculate cortisol statistics and percentiles
-        const agpResult = calculateCortisolStatistics(cortisolData);
+        const agpResult = calculateCortisolStatistics(cortisolData, customRanges);
         
         res.json({
             ...agpResult,
@@ -1694,6 +2363,279 @@ app.get('/user-cortisol-agp/:username', authenticateToken, async (req, res) => {
         console.error('Error details:', error);
         console.error('Stack trace:', error.stack);
         res.status(500).json({ error: 'Failed to fetch cortisol data for AGP analysis' });
+    }
+});
+
+// GET /api/population-analysis
+// Returns aggregated population statistics for different user groups
+app.get('/api/population-analysis', authenticateToken, async (req, res) => {
+    try {
+        console.log('=== Starting Population Analysis ===');
+        
+        // Get all users accessible to this user
+        const accessibleUsernames = await getAccessibleUsers(req.user);
+        console.log(`Found ${accessibleUsernames.length} accessible usernames for population analysis`);
+        console.log('Accessible usernames:', accessibleUsernames);
+        
+        // Get full user data for accessible users
+        const allData = await getFileTrackerData();
+        const accessibleUsers = allData.filter(user => accessibleUsernames.includes(user.username));
+        
+        console.log(`Found ${accessibleUsers.length} accessible users with full data for population analysis`);
+        console.log('Accessible users:', accessibleUsers.map(u => u.username));
+        
+        if (accessibleUsers.length === 0) {
+            console.log('No accessible users found, returning empty data');
+            return res.json({
+                general: { userCount: 0, averageTimeInTarget: 0, averageTimeHigh: 0, averageTimeVeryHigh: 0, averageTimeLow: 0, averageTimeVeryLow: 0 },
+                diabetes: { userCount: 0, averageTimeInTarget: 0, averageTimeHigh: 0, averageTimeVeryHigh: 0, averageTimeLow: 0, averageTimeVeryLow: 0 },
+                pregnancy: { userCount: 0, averageTimeInTarget: 0, averageTimeHigh: 0, averageTimeVeryHigh: 0, averageTimeLow: 0, averageTimeVeryLow: 0 },
+                overall: { averageTimeInTarget: 0 },
+                dateRange: 'No Data'
+            });
+        }
+
+        const db = client.db('s3-mongodb-db');
+        const dataCollection = db.collection('s3-mongodb-data-entries');
+        const configCollection = db.collection('biomarker_configs');
+        
+        // Get biomarker configuration
+        const configDoc = await configCollection.findOne({ type: 'biomarker_ranges' });
+        
+        // Initialize population groups
+        const populations = {
+            general: [],
+            diabetes: [],
+            pregnancy: []
+        };
+        
+        let earliestDate = null;
+        let latestDate = null;
+        
+        // Process each accessible user
+        for (const userInfo of accessibleUsers) {
+            try {
+                // Get glucose data for this user
+                const glucoseData = [];
+                
+                if (userInfo.etag) {
+                    const sensorDataResponse = await dataCollection.findOne({ etag: userInfo.etag });
+                    
+                    if (sensorDataResponse) {
+                        let dataPoints = [];
+                        if (sensorDataResponse.data && sensorDataResponse.data.data_points) {
+                            dataPoints = sensorDataResponse.data.data_points;
+                        } else if (sensorDataResponse.data_snapshot && sensorDataResponse.data_snapshot.data_points) {
+                            dataPoints = sensorDataResponse.data_snapshot.data_points;
+                        }
+                        
+                        // Process glucose data points
+                        dataPoints.forEach(point => {
+                            let timestamp;
+                            try {
+                                if (point.timestamp && point.timestamp.$date && point.timestamp.$date.$numberLong) {
+                                    timestamp = new Date(parseInt(point.timestamp.$date.$numberLong));
+                                } else if (point.timestamp && point.timestamp.$date) {
+                                    timestamp = new Date(point.timestamp.$date);
+                                } else if (point.timestamp) {
+                                    timestamp = new Date(point.timestamp);
+                                } else if (point.time) {
+                                    const timeValue = point.time.$numberInt || point.time;
+                                    timestamp = new Date(parseInt(timeValue) * 1000);
+                                } else {
+                                    timestamp = new Date();
+                                }
+                            } catch (error) {
+                                timestamp = new Date();
+                            }
+
+                            // Track date range
+                            if (!earliestDate || timestamp < earliestDate) earliestDate = timestamp;
+                            if (!latestDate || timestamp > latestDate) latestDate = timestamp;
+
+                            const glucose1 = point['Glucose(mg/dL)'] && (point['Glucose(mg/dL)'].$numberDouble || point['Glucose(mg/dL)']);
+                            const glucose2 = point['Glucose(mg/dL)_2'] && (point['Glucose(mg/dL)_2'].$numberDouble || point['Glucose(mg/dL)_2']);
+                            
+                            const validGlucose1 = (glucose1 !== null && glucose1 !== undefined && !isNaN(glucose1)) ? parseFloat(glucose1) : null;
+                            const validGlucose2 = (glucose2 !== null && glucose2 !== undefined && !isNaN(glucose2)) ? parseFloat(glucose2) : null;
+                            
+                            let meanGlucose = null;
+                            if (validGlucose1 !== null && validGlucose2 !== null) {
+                                meanGlucose = (validGlucose1 + validGlucose2) / 2;
+                            } else if (validGlucose1 !== null) {
+                                meanGlucose = validGlucose1;
+                            } else if (validGlucose2 !== null) {
+                                meanGlucose = validGlucose2;
+                            }
+                            
+                            if (meanGlucose !== null) {
+                                glucoseData.push({
+                                    timestamp: timestamp,
+                                    value: meanGlucose
+                                });
+                            }
+                        });
+                    }
+                }
+                
+                // Only process users with sufficient data
+                console.log(`User ${userInfo.username}: ${glucoseData.length} glucose data points`);
+                if (glucoseData.length < 10) {
+                    console.log(`Skipping ${userInfo.username} - insufficient data (${glucoseData.length} points)`);
+                    continue;
+                }
+                
+                // Determine user's conditions
+                const personalInfo = userInfo.personal_information || {};
+                const deviceInfo = userInfo.device_info || {};
+                
+                const isPregnant = personalInfo.pregnant === true;
+                const hasDiabetes = personalInfo.Diabete === true || personalInfo.diabete === true || personalInfo.diabetes === true;
+                
+                console.log(`User ${userInfo.username} conditions: pregnant=${isPregnant}, diabetes=${hasDiabetes}`);
+                
+                // Get applicable custom ranges
+                let customRanges = null;
+                if (configDoc && configDoc.configs.glucose) {
+                    const applicableConditions = [];
+                    
+                    if (isPregnant) applicableConditions.push('pregnancy');
+                    if (hasDiabetes) applicableConditions.push('type2_diabetes');
+                    if (personalInfo.smokes === true) applicableConditions.push('smoking');
+                    if (personalInfo.drinks === true) applicableConditions.push('drinking');
+                    if (personalInfo['High BP'] === true || personalInfo.hypertension === true) {
+                        applicableConditions.push('hypertension');
+                    }
+                    
+                    const age = deviceInfo?.age || personalInfo.age;
+                    if (age && (parseInt(age) < 18 || age < 18)) {
+                        applicableConditions.push('pediatric');
+                    }
+
+                    if (applicableConditions.length > 0) {
+                        const biomarkerConfig = configDoc.configs.glucose;
+                        const applicableRanges = [];
+                        
+                        for (const condition of applicableConditions) {
+                            if (biomarkerConfig.conditions[condition]) {
+                                applicableRanges.push(biomarkerConfig.conditions[condition].ranges);
+                            }
+                        }
+                        
+                        if (applicableRanges.length > 0) {
+                            if (applicableRanges.length === 1) {
+                                customRanges = applicableRanges[0];
+                            } else {
+                                customRanges = averageRanges(applicableRanges, 'glucose');
+                            }
+                        }
+                    }
+                }
+                
+                // Calculate statistics for this user
+                const stats = calculateAGPStatistics(glucoseData, customRanges);
+                
+                // Create user data object
+                const userData = {
+                    username: userInfo.username,
+                    timeInTarget: stats.statistics.percentBetween70And180,
+                    timeHigh: stats.statistics.percentAbove180 - stats.statistics.percentAbove250,
+                    timeVeryHigh: stats.statistics.percentAbove250,
+                    timeLow: stats.statistics.percentBelow70 - stats.statistics.percentBelow54,
+                    timeVeryLow: stats.statistics.percentBelow54,
+                    isPregnant,
+                    hasDiabetes
+                };
+                
+                // Categorize user into populations
+                if (isPregnant) {
+                    console.log(`Adding ${userInfo.username} to pregnancy population`);
+                    populations.pregnancy.push(userData);
+                } else if (hasDiabetes) {
+                    console.log(`Adding ${userInfo.username} to diabetes population`);
+                    populations.diabetes.push(userData);
+                } else {
+                    console.log(`Adding ${userInfo.username} to general population`);
+                    populations.general.push(userData);
+                }
+                
+            } catch (userError) {
+                console.warn(`Error processing user ${userInfo.username}:`, userError.message);
+            }
+        }
+        
+        // Calculate averages for each population
+        const calculatePopulationAverages = (userArray) => {
+            if (userArray.length === 0) {
+                return {
+                    userCount: 0,
+                    averageTimeInTarget: 0,
+                    averageTimeHigh: 0,
+                    averageTimeVeryHigh: 0,
+                    averageTimeLow: 0,
+                    averageTimeVeryLow: 0
+                };
+            }
+            
+            const sums = userArray.reduce((acc, user) => ({
+                timeInTarget: acc.timeInTarget + user.timeInTarget,
+                timeHigh: acc.timeHigh + user.timeHigh,
+                timeVeryHigh: acc.timeVeryHigh + user.timeVeryHigh,
+                timeLow: acc.timeLow + user.timeLow,
+                timeVeryLow: acc.timeVeryLow + user.timeVeryLow
+            }), { timeInTarget: 0, timeHigh: 0, timeVeryHigh: 0, timeLow: 0, timeVeryLow: 0 });
+            
+            const count = userArray.length;
+            return {
+                userCount: count,
+                averageTimeInTarget: Math.round((sums.timeInTarget / count) * 10) / 10,
+                averageTimeHigh: Math.round((sums.timeHigh / count) * 10) / 10,
+                averageTimeVeryHigh: Math.round((sums.timeVeryHigh / count) * 10) / 10,
+                averageTimeLow: Math.round((sums.timeLow / count) * 10) / 10,
+                averageTimeVeryLow: Math.round((sums.timeVeryLow / count) * 10) / 10
+            };
+        };
+        
+        const generalStats = calculatePopulationAverages(populations.general);
+        const diabetesStats = calculatePopulationAverages(populations.diabetes);
+        const pregnancyStats = calculatePopulationAverages(populations.pregnancy);
+        
+        // Calculate overall average
+        const allUsers = [...populations.general, ...populations.diabetes, ...populations.pregnancy];
+        const overallStats = calculatePopulationAverages(allUsers);
+        
+        // Format date range
+        let dateRange = 'No Data';
+        if (earliestDate && latestDate) {
+            const formatDate = (date) => {
+                return date.toLocaleDateString('en-US', { 
+                    month: 'short', 
+                    day: 'numeric', 
+                    year: 'numeric' 
+                });
+            };
+            dateRange = `${formatDate(earliestDate)} - ${formatDate(latestDate)}`;
+        }
+        
+        console.log('=== Population Analysis Results ===');
+        console.log('General population:', generalStats);
+        console.log('Diabetes population:', diabetesStats);
+        console.log('Pregnancy population:', pregnancyStats);
+        console.log('Overall:', overallStats);
+        
+        res.json({
+            general: generalStats,
+            diabetes: diabetesStats,
+            pregnancy: pregnancyStats,
+            overall: { averageTimeInTarget: overallStats.averageTimeInTarget },
+            dateRange: dateRange
+        });
+        
+    } catch (error) {
+        console.error('=== ERROR in population analysis endpoint ===');
+        console.error('Error details:', error);
+        console.error('Stack trace:', error.stack);
+        res.status(500).json({ error: 'Failed to fetch population analysis data' });
     }
 });
 

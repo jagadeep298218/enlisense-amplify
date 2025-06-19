@@ -21,6 +21,8 @@ import AnalyticsIcon from '@mui/icons-material/Analytics';
 import PersonIcon from '@mui/icons-material/Person';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import MedicalServicesIcon from '@mui/icons-material/MedicalServices';
+import SettingsIcon from '@mui/icons-material/Settings';
+import BarChartIcon from '@mui/icons-material/BarChart';
 import CSVUpload from './CSVUpload';
 import PatientComparison from './PatientComparison';
 
@@ -251,28 +253,6 @@ const FileTracker = () => {
                     variant={params.value === 'Active' ? 'filled' : 'outlined'}
                 />
             )
-        },
-        {
-            field: 'actions',
-            headerName: 'Actions',
-            width: 150,
-            sortable: false,
-            renderCell: (params) => (
-                <Box sx={{ display: 'flex', gap: 1 }}>
-                    <Button
-                        size="small"
-                        variant="outlined"
-                        startIcon={<AnalyticsIcon />}
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            navigate(`/agp-report/${params.row.username}`);
-                        }}
-                        sx={{ minWidth: 'auto' }}
-                    >
-                        AGP
-                    </Button>
-                </Box>
-            )
         }
     ];
 
@@ -317,14 +297,32 @@ const FileTracker = () => {
                             </Box>
                             
                             {user.admin && (
-                                <Button
-                                    onClick={handleDownloadCSV}
-                                    startIcon={<DownloadIcon />}
-                                    variant="outlined"
-                                    size="small"
-                                >
-                                    Export CSV
-                                </Button>
+                                <>
+                                    <Button
+                                        onClick={() => navigate('/population-analysis')}
+                                        startIcon={<BarChartIcon />}
+                                        variant="outlined"
+                                        size="small"
+                                    >
+                                        Population Analysis
+                                    </Button>
+                                    <Button
+                                        onClick={() => navigate('/admin/biomarker-config')}
+                                        startIcon={<SettingsIcon />}
+                                        variant="outlined"
+                                        size="small"
+                                    >
+                                        Configure Ranges
+                                    </Button>
+                                    <Button
+                                        onClick={handleDownloadCSV}
+                                        startIcon={<DownloadIcon />}
+                                        variant="outlined"
+                                        size="small"
+                                    >
+                                        Export CSV
+                                    </Button>
+                                </>
                             )}
                             
 

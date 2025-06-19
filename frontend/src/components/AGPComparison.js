@@ -187,7 +187,7 @@ function AGPComparison() {
       const above50 = stats.percentAbove50 || 0;
       
       rangeValues = [below5, between5And10, targetRange, between30And50, above50];
-      rangeLabels = ["Very Low<br><5", "Low<br>5-10", "Normal<br>10-30", "High<br>30-50", "Very High<br>>50"];
+      rangeLabels = ["Very Low<br><2", "Low<br>2-5", "Normal<br>5-15", "High<br>15-20", "Very High<br>>20"];
       rangeColors = ["#3b82f6", "#60a5fa", "#10b981", "#f59e0b", "#dc2626"];
       unit = "ng/mL";
     }
@@ -492,7 +492,7 @@ function AGPComparison() {
                                     '& .MuiChip-label': { fontSize: '0.9rem' }
                                   }}
                                 />
-                              </Box>
+                              </Box>    
                             );
                           })
                         }

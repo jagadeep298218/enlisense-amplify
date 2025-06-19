@@ -25,7 +25,7 @@ import { DataGrid } from '@mui/x-data-grid';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ScienceIcon from '@mui/icons-material/Science';
 import BloodtypeIcon from '@mui/icons-material/Bloodtype';
-import ViolinPlot from './ViolinPlot';
+import AGPReport from './AGPReport';
 
 // Styled components
 const StyledTableCell = styled(TableCell)(({ theme }) => ({
@@ -363,7 +363,7 @@ const UserVersions = () => {
                     <Tab label="Device Info" />
                     {!versionId && <Tab label="Past Data" />}
                     <Tab label="Sensor Data" />
-                    <Tab label="Violin Plots" />
+                    <Tab label="AGP Report" />
                 </Tabs>
 
                 <Box sx={{ mt: 3 }}>
@@ -795,20 +795,20 @@ const UserVersions = () => {
                             </Container>
                         )
                     ) : (currentTab === (versionId ? 2 : 3)) ? (
-                        // Violin Plot Tab
+                        // AGP Report Tab
                         sensorData && sensorTableData.length > 0 ? (
-                            <ViolinPlot 
-                                sensorData={sensorTableData} 
-                                title={versionId ? `Violin Plot Analysis - Version ${sensorData?.version_number || 'N/A'}` : "Sensor Data Distribution Analysis"}
+                            <AGPReport 
+                                username={username}
+                                embedMode={true}
                             />
                         ) : (
                             <Container maxWidth="md">
                                 <Paper sx={{ p: 4, mt: 2 }}>
                                     <Typography variant="h6" align="center" color="text.secondary">
-                                        No sensor data available for violin plot visualization.
+                                        No sensor data available for AGP report.
                                     </Typography>
                                     <Typography variant="body2" align="center" sx={{ mt: 2 }}>
-                                        Please ensure sensor data is available before viewing distribution plots.
+                                        Please ensure sensor data is available before viewing the AGP report.
                                     </Typography>
                                 </Paper>
                             </Container>
