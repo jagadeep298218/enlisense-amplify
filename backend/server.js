@@ -779,7 +779,7 @@ async function fetchUserAGPData(username, biomarkerType) {
         // Get applicable ranges for this user
         let customRanges = null;
         try {
-            const configCollection = db.collection('biomarker_configs');
+            const configCollection = db.collection('s3-mongodb-ranges');
             const configDoc = await configCollection.findOne({ type: 'biomarker_ranges' });
             
             console.log(`=== DEBUGGING CUSTOM RANGES for ${username} ===`);
@@ -946,7 +946,7 @@ app.get('/admin/biomarker-configs', authenticateToken, async (req, res) => {
         }
 
         const db = client.db('s3-mongodb-db');
-        const configCollection = db.collection('biomarker_configs');
+        const configCollection = db.collection('s3-mongodb-ranges');
         
         // Get the current configuration or return defaults
         let config = await configCollection.findOne({ type: 'biomarker_ranges' });
@@ -968,11 +968,11 @@ app.get('/admin/biomarker-configs', authenticateToken, async (req, res) => {
                     },
                     cortisol: {
                         default: {
-                            veryLow: { min: 0, max: 5 },
-                            low: { min: 5, max: 10 },
-                            normal: { min: 10, max: 30 },
-                            high: { min: 30, max: 50 },
-                            veryHigh: { min: 50, max: 100 }
+                            veryLow: { min: 0, max: 2 },
+                            low: { min: 2, max: 5 },
+                            normal: { min: 5, max: 15 },
+                            high: { min: 15, max: 20 },
+                            veryHigh: { min: 20, max: 25 }
                         },
                         conditions: {}
                     }
@@ -1014,9 +1014,9 @@ app.post('/admin/biomarker-configs', authenticateToken, async (req, res) => {
         console.log('Cortisol config exists:', !!configs.cortisol);
 
         const db = client.db('s3-mongodb-db');
-        const configCollection = db.collection('biomarker_configs');
+        const configCollection = db.collection('s3-mongodb-ranges');
         
-        console.log('Attempting to save to MongoDB...');
+        console.log('Attempting to save to MongoDB collection: s3-mongodb-ranges...');
         
         // Upsert the configuration
         const result = await configCollection.updateOne(
@@ -1061,7 +1061,7 @@ app.get('/admin/biomarker-configs/:biomarker', authenticateToken, async (req, re
         }
 
         const db = client.db('s3-mongodb-db');
-        const configCollection = db.collection('biomarker_configs');
+        const configCollection = db.collection('s3-mongodb-ranges');
         
         const config = await configCollection.findOne({ type: 'biomarker_ranges' });
         
@@ -1076,11 +1076,11 @@ app.get('/admin/biomarker-configs/:biomarker', authenticateToken, async (req, re
                     veryHigh: { min: 250, max: 400 }
                 },
                 cortisol: {
-                    veryLow: { min: 0, max: 5 },
-                    low: { min: 5, max: 10 },
-                    normal: { min: 10, max: 30 },
-                    high: { min: 30, max: 50 },
-                    veryHigh: { min: 50, max: 100 }
+                    veryLow: { min: 0, max: 2 },
+                    low: { min: 2, max: 5 },
+                    normal: { min: 5, max: 15 },
+                    high: { min: 15, max: 20 },
+                    veryHigh: { min: 20, max: 25 }
                 }
             };
             
@@ -1113,7 +1113,7 @@ app.get('/admin/biomarker-configs/:biomarker/:condition', authenticateToken, asy
         }
 
         const db = client.db('s3-mongodb-db');
-        const configCollection = db.collection('biomarker_configs');
+        const configCollection = db.collection('s3-mongodb-ranges');
         
         const config = await configCollection.findOne({ type: 'biomarker_ranges' });
         
@@ -1128,11 +1128,11 @@ app.get('/admin/biomarker-configs/:biomarker/:condition', authenticateToken, asy
                     veryHigh: { min: 250, max: 400 }
                 },
                 cortisol: {
-                    veryLow: { min: 0, max: 5 },
-                    low: { min: 5, max: 10 },
-                    normal: { min: 10, max: 30 },
-                    high: { min: 30, max: 50 },
-                    veryHigh: { min: 50, max: 100 }
+                    veryLow: { min: 0, max: 2 },
+                    low: { min: 2, max: 5 },
+                    normal: { min: 5, max: 15 },
+                    high: { min: 15, max: 20 },
+                    veryHigh: { min: 20, max: 25 }
                 }
             };
             
@@ -1226,7 +1226,7 @@ app.get('/user-applicable-ranges/:username/:biomarker', authenticateToken, async
         }
 
         // Fetch configurations for applicable conditions from the new storage format
-        const configCollection = db.collection('biomarker_configs');
+        const configCollection = db.collection('s3-mongodb-ranges');
         const configDoc = await configCollection.findOne({ type: 'biomarker_ranges' });
 
         if (!configDoc || !configDoc.configs[biomarker]) {
@@ -2104,7 +2104,7 @@ app.get('/user-glucose-agp/:username', authenticateToken, async (req, res) => {
         // Get applicable ranges for this user
         let customRanges = null;
         try {
-            const configCollection = db.collection('biomarker_configs');
+            const configCollection = db.collection('s3-mongodb-ranges');
             const configDoc = await configCollection.findOne({ type: 'biomarker_ranges' });
             
             if (configDoc && configDoc.configs.glucose && userInfo.personal_information) {
@@ -2294,7 +2294,7 @@ app.get('/user-cortisol-agp/:username', authenticateToken, async (req, res) => {
         // Get applicable ranges for this user
         let customRanges = null;
         try {
-            const configCollection = db.collection('biomarker_configs');
+            const configCollection = db.collection('s3-mongodb-ranges');
             const configDoc = await configCollection.findOne({ type: 'biomarker_ranges' });
             
             if (configDoc && configDoc.configs.cortisol && userInfo.personal_information) {
@@ -2397,7 +2397,7 @@ app.get('/api/population-analysis', authenticateToken, async (req, res) => {
 
         const db = client.db('s3-mongodb-db');
         const dataCollection = db.collection('s3-mongodb-data-entries');
-        const configCollection = db.collection('biomarker_configs');
+        const configCollection = db.collection('s3-mongodb-ranges');
         
         // Get biomarker configuration
         const configDoc = await configCollection.findOne({ type: 'biomarker_ranges' });

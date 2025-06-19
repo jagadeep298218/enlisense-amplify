@@ -35,6 +35,78 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
   const [isDownloading, setIsDownloading] = useState(false);
   const reportRef = useRef();
 
+  // PDF Download function - defined early to avoid hoisting issues
+  const downloadPDF = async () => {
+    try {
+      setIsDownloading(true);
+      
+      // Get the report container element
+      const element = reportRef.current;
+      if (!element) {
+        throw new Error('Report element not found');
+      }
+
+      // Hide interactive elements before capturing
+      const elementsToHide = element.querySelectorAll('.pdf-hide');
+      elementsToHide.forEach(el => {
+        el.style.display = 'none';
+      });
+
+      // Configure html2canvas options for better quality
+      const canvas = await html2canvas(element, {
+        scale: 2, // Higher resolution
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        width: element.scrollWidth,
+        height: element.scrollHeight,
+        scrollX: 0,
+        scrollY: 0
+      });
+
+      // Restore hidden elements after capturing
+      elementsToHide.forEach(el => {
+        el.style.display = '';
+      });
+
+      // Calculate PDF dimensions
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      
+      // A4 dimensions in mm
+      const pdfWidth = 210;
+      const pdfHeight = 297;
+      
+      // Calculate image dimensions to fit A4
+      const imgWidth = pdfWidth - 20; // 10mm margins on each side
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      
+      // If the content is too tall for one page, we'll fit it to page height
+      const finalHeight = imgHeight > (pdfHeight - 20) ? (pdfHeight - 20) : imgHeight;
+      const finalWidth = imgHeight > (pdfHeight - 20) ? (canvas.width * finalHeight) / canvas.height : imgWidth;
+      
+      // Center the image on the page
+      const x = (pdfWidth - finalWidth) / 2;
+      const y = 10; // 10mm top margin
+      
+      pdf.addImage(imgData, 'PNG', x, y, finalWidth, finalHeight);
+      
+      // Generate filename with patient name and date
+      const patientName = patientData?.patientInfo?.name || username || 'Patient';
+      const date = new Date().toISOString().split('T')[0];
+      const biomarkerTypeCapitalized = biomarkerType.charAt(0).toUpperCase() + biomarkerType.slice(1);
+      const filename = `${patientName}_${biomarkerTypeCapitalized}_AGP_Report_${date}.pdf`;
+      
+      pdf.save(filename);
+      
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Error generating PDF. Please try again.');
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
   useEffect(() => {
     const fetchAGPData = async () => {
       try {
@@ -121,7 +193,6 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
   console.log("Custom ranges being used:", customRanges);
   console.log("Applicable ranges data:", applicableRanges);
   console.log("Embed mode:", embedMode);
-  console.log("Download PDF function defined:", typeof downloadPDF);
   
   // Get range thresholds (custom or default)
   const getRangeThresholds = () => {
@@ -242,67 +313,6 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
     return `${hours}h ${mins}min`;
   };
 
-  // PDF Download function
-  const downloadPDF = async () => {
-    try {
-      setIsDownloading(true);
-      
-      // Get the report container element
-      const element = reportRef.current;
-      if (!element) {
-        throw new Error('Report element not found');
-      }
-
-      // Configure html2canvas options for better quality
-      const canvas = await html2canvas(element, {
-        scale: 2, // Higher resolution
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: '#ffffff',
-        width: element.scrollWidth,
-        height: element.scrollHeight,
-        scrollX: 0,
-        scrollY: 0
-      });
-
-      // Calculate PDF dimensions
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      
-      // A4 dimensions in mm
-      const pdfWidth = 210;
-      const pdfHeight = 297;
-      
-      // Calculate image dimensions to fit A4
-      const imgWidth = pdfWidth - 20; // 10mm margins on each side
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      
-      // If the content is too tall for one page, we'll fit it to page height
-      const finalHeight = imgHeight > (pdfHeight - 20) ? (pdfHeight - 20) : imgHeight;
-      const finalWidth = imgHeight > (pdfHeight - 20) ? (canvas.width * finalHeight) / canvas.height : imgWidth;
-      
-      // Center the image on the page
-      const x = (pdfWidth - finalWidth) / 2;
-      const y = 10; // 10mm top margin
-      
-      pdf.addImage(imgData, 'PNG', x, y, finalWidth, finalHeight);
-      
-      // Generate filename with patient name and date
-      const patientName = patientData.patientInfo?.name || username || 'Patient';
-      const date = new Date().toISOString().split('T')[0];
-      const biomarkerTypeCapitalized = biomarkerType.charAt(0).toUpperCase() + biomarkerType.slice(1);
-      const filename = `${patientName}_${biomarkerTypeCapitalized}_AGP_Report_${date}.pdf`;
-      
-      pdf.save(filename);
-      
-    } catch (error) {
-      console.error('Error generating PDF:', error);
-      alert('Error generating PDF. Please try again.');
-    } finally {
-      setIsDownloading(false);
-    }
-  };
-  
   // Time in Range Bar Chart Data for Plotly
   const timeInRangeData = [
     {
@@ -462,7 +472,7 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
       {/* Header - only shown when not in embed mode */}
       {!embedMode && (
         <Box sx={{ mb: 4 }}>
-          <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+          <Box sx={{ display: 'flex', gap: 2, mb: 2 }} className="pdf-hide">
             <Button
               startIcon={<ArrowBackIcon />}
               onClick={() => navigate("/")}
@@ -496,6 +506,7 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
                 }}
                 aria-label="biomarker type"
                 size="small"
+                className="pdf-hide"
               >
                 <ToggleButton value="glucose" aria-label="glucose">
                   Glucose
@@ -543,7 +554,7 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
       
       {/* Biomarker toggle for embed mode */}
       {embedMode && (
-        <Box sx={{ mb: 2, display: 'flex', justifyContent: 'center', gap: 2, flexWrap: 'wrap' }}>
+        <Box sx={{ mb: 2, display: 'flex', justifyContent: 'center', gap: 2, flexWrap: 'wrap' }} className="pdf-hide">
           <ToggleButtonGroup
             value={biomarkerType}
             exclusive
