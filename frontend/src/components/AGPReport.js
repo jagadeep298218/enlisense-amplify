@@ -35,6 +35,62 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
   const [isDownloading, setIsDownloading] = useState(false);
   const reportRef = useRef();
 
+  // CSV Download function for additional metrics
+  const downloadCSV = () => {
+    try {
+      // Calculate CGM Active percentage from wear time using actual date range
+      const startDate = new Date(patientData.startAt);
+      const endDate = new Date(patientData.endAt);
+      const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
+      const totalPossibleMinutes = totalDays * 24 * 60;
+      const actualWearTimeMinutes = patientData.statistics.totalWearTimeMinutes || 0;
+      const cgmActivePercentage = Math.round((actualWearTimeMinutes / totalPossibleMinutes) * 100);
+      
+      // Calculate actual date range from data
+      const dateRange = `${startDate.toLocaleDateString()} - ${endDate.toLocaleDateString()}`;
+      
+      // Create metrics data array
+      const metrics = [
+        ['Metric', 'Value'],
+        ['Date Range', dateRange],
+        ['CGM Active', `${cgmActivePercentage}%`],
+        [`Average ${biomarkerType === 'glucose' ? 'Glucose' : 'Cortisol'}`, `${patientData.statistics.average} ${biomarkerType === 'glucose' ? 'mg/dL' : 'ng/mL'}`],
+        ['Coefficient of Variation', `${patientData.statistics.coefficientOfVariationPercentage}%`]
+      ];
+      
+      // Add glucose-specific metrics
+      if (biomarkerType === 'glucose') {
+        metrics.push(['Estimated A1C', `${patientData.statistics.a1c}%`]);
+        metrics.push(['GMI', `${patientData.statistics.gmi}%`]);
+      }
+      
+      // Convert to CSV format
+      const csvContent = metrics.map(row => row.join(',')).join('\n');
+      
+      // Create and download the CSV file
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      
+      // Generate filename with patient name and date
+      const patientName = patientData?.patientInfo?.name || username || 'Patient';
+      const date = new Date().toISOString().split('T')[0];
+      const biomarkerTypeCapitalized = biomarkerType.charAt(0).toUpperCase() + biomarkerType.slice(1);
+      const filename = `${patientName}_${biomarkerTypeCapitalized}_AGP_Additional_Metrics_${date}.csv`;
+      
+      link.setAttribute('download', filename);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+    } catch (error) {
+      console.error('Error generating CSV:', error);
+      alert('Error generating CSV. Please try again.');
+    }
+  };
+
   // PDF Download function - defined early to avoid hoisting issues
   const downloadPDF = async () => {
     try {
@@ -488,6 +544,14 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
             >
               {isDownloading ? 'Generating PDF...' : 'Download PDF'}
             </Button>
+            <Button
+              startIcon={<DownloadIcon />}
+              onClick={downloadCSV}
+              variant="outlined"
+              color="secondary"
+            >
+              Download CSV
+            </Button>
           </Box>
           
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
@@ -584,6 +648,17 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
             size="small"
           >
             {isDownloading ? 'Generating PDF...' : 'Download PDF'}
+          </Button>
+          
+          {/* Download CSV Button for embed mode */}
+          <Button
+            startIcon={<DownloadIcon />}
+            onClick={downloadCSV}
+            variant="outlined"
+            color="secondary"
+            size="small"
+          >
+            Download CSV
           </Button>
           
           {/* Auto-detected conditions display for embed mode */}
@@ -977,7 +1052,7 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
                     Date Range
                   </Typography>
                   <Typography variant="h6" fontWeight="bold" color="text.primary" sx={{ fontSize: '1rem' }}>
-                    Jan 1 - Jan 7, 2025
+                    {new Date(patientData.startAt).toLocaleDateString()} - {new Date(patientData.endAt).toLocaleDateString()}
                   </Typography>
                 </Box>
               </Grid>
@@ -989,7 +1064,16 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
                     CGM Active
                   </Typography>
                   <Typography variant="h5" fontWeight="bold" color="success.main">
-                    85%
+                    {(() => {
+                      // Calculate CGM Active percentage from wear time
+                      const startDate = new Date(patientData.startAt);
+                      const endDate = new Date(patientData.endAt);
+                      const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
+                      const totalPossibleMinutes = totalDays * 24 * 60;
+                      const actualWearTimeMinutes = patientData.statistics.totalWearTimeMinutes || 0;
+                      const cgmActivePercentage = Math.round((actualWearTimeMinutes / totalPossibleMinutes) * 100);
+                      return `${cgmActivePercentage}%`;
+                    })()}
                   </Typography>
                 </Box>
               </Grid>

@@ -854,6 +854,7 @@ async function fetchUserAGPData(username, biomarkerType) {
             ? calculateAGPStatistics(biomarkerData, customRanges)
             : calculateCortisolStatistics(biomarkerData, customRanges);
 
+
         // Calculate hourly percentiles for AGP chart
         const hourlyData = Array(24).fill(null).map(() => []);
         
