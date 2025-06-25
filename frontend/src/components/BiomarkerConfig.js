@@ -1,3 +1,28 @@
+/**
+ * BiomarkerConfig.js
+ * 
+ * PURPOSE: Administrative interface for configuring biomarker range thresholds and conditions
+ * 
+ * FEATURES:
+ * - Dynamic range configuration for glucose and cortisol biomarkers
+ * - Condition-specific range templates (pregnancy, diabetes types, pediatric, etc.)
+ * - Visual range preview with color-coded thresholds
+ * - Persistent storage and retrieval of custom configurations
+ * - Template system for common medical conditions
+ * - Real-time validation of range boundaries
+ * 
+ * DEPENDENCIES:
+ * - Material-UI for comprehensive form components
+ * - Custom condition templates for medical scenarios
+ * - API integration for persistent configuration storage
+ * 
+ * ERROR HANDLING:
+ * - [CRITICAL] API save/load failures with user feedback and retry options
+ * - [HIGH] Range validation prevents invalid threshold configurations
+ * - [MEDIUM] Template loading errors handled with fallback values
+ * - [LOW] Form validation provides immediate feedback on invalid inputs
+ */
+
 import React, { useState, useEffect } from 'react';
 import {
     Container,
@@ -15,13 +40,10 @@ import {
     MenuItem,
     Chip,
     Alert,
-    Divider,
     IconButton,
     Accordion,
     AccordionSummary,
-    AccordionDetails,
-    Switch,
-    FormControlLabel
+    AccordionDetails
 } from '@mui/material';
 import {
     Add as AddIcon,

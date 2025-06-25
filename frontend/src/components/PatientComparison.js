@@ -1,4 +1,27 @@
-import React, { useState } from 'react';
+/**
+ * PatientComparison.js
+ * 
+ * PURPOSE: User interface component for selecting two patients to compare their AGP reports
+ * 
+ * FEATURES:
+ * - Dual patient selection with dropdowns showing patient metadata
+ * - Biomarker type switching (glucose/cortisol) for appropriate comparisons
+ * - Input validation preventing invalid comparisons (same patient, missing selections)
+ * - Patient availability checking with helpful feedback messages
+ * - Responsive grid layout optimized for various screen sizes
+ * 
+ * DEPENDENCIES:
+ * - Material-UI components for consistent form styling
+ * - React Router for navigation to comparison views
+ * - Icons for enhanced visual feedback
+ * 
+ * ERROR HANDLING:
+ * - [MEDIUM] Input validation with clear error messages
+ * - [LOW] Empty patient list handled with informative alerts
+ * - [LOW] Navigation failures caught by router error boundary
+ */
+
+import React, { useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     Paper,
@@ -26,22 +49,119 @@ const PatientComparison = ({ patients }) => {
     const [error, setError] = useState('');
     const navigate = useNavigate();
 
-    const handleCompare = () => {
+    /**
+     * MEMOIZED CALCULATION: Available Patients
+     * PURPOSE: Filter and prepare patient list for selection dropdowns
+     * OPTIMIZATION: Only recalculates when patients array changes
+     * 
+     * ERROR HANDLING:
+     * - [LOW] Handles null/undefined patients gracefully
+     * - [LOW] Filters out patients without usernames
+     */
+    const availablePatients = useMemo(() => {
+        if (!patients || !Array.isArray(patients)) {
+            return [];
+        }
+        return patients.filter(p => p?.username);
+    }, [patients]);
+
+    /**
+     * FUNCTION: validateComparison
+     * PURPOSE: Validate patient selection before navigation
+     * RETURNS: Boolean indicating if comparison is valid
+     * 
+     * ERROR HANDLING:
+     * - [MEDIUM] Clear validation messages for user guidance
+     * - [LOW] Prevents unnecessary API calls with invalid data
+     */
+    const validateComparison = useCallback(() => {
+        setError('');
+
         if (!patient1 || !patient2) {
             setError('Please select both patients to compare');
-            return;
+            return false;
         }
 
         if (patient1 === patient2) {
             setError('Please select two different patients');
-            return;
+            return false;
         }
 
-        setError('');
-        navigate(`/agp-comparison/${patient1}/${patient2}/${biomarkerType}`);
-    };
+        return true;
+    }, [patient1, patient2]);
 
-    const availablePatients = patients.filter(p => p.username);
+    /**
+     * FUNCTION: handleCompare
+     * PURPOSE: Validate inputs and navigate to comparison view
+     * 
+     * PROCESS:
+     * 1. Validate patient selections
+     * 2. Clear any existing errors
+     * 3. Navigate to AGP comparison route with parameters
+     * 
+     * ERROR HANDLING:
+     * - [MEDIUM] Input validation prevents invalid navigation
+     * - [LOW] Navigation errors handled by router
+     */
+    const handleCompare = useCallback(() => {
+        if (validateComparison()) {
+            navigate(`/agp-comparison/${patient1}/${patient2}/${biomarkerType}`);
+        }
+    }, [validateComparison, navigate, patient1, patient2, biomarkerType]);
+
+    /**
+     * FUNCTION: handleBiomarkerChange
+     * PURPOSE: Update biomarker type selection with validation
+     * 
+     * ERROR HANDLING:
+     * - [LOW] Prevents null/undefined biomarker selections
+     */
+    const handleBiomarkerChange = useCallback((event, newType) => {
+        if (newType) {
+            setBiomarkerType(newType);
+        }
+    }, []);
+
+    /**
+     * FUNCTION: renderPatientOption
+     * PURPOSE: Render patient selection option with metadata
+     * PARAMETERS: patient - Patient object with username and device_info
+     * 
+     * ERROR HANDLING:
+     * - [LOW] Handles missing device_info gracefully
+     * - [LOW] Displays fallback values for missing patient data
+     */
+    const renderPatientOption = useCallback((patient) => (
+        <MenuItem key={patient.username} value={patient.username}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <PersonIcon fontSize="small" />
+                {patient.username}
+                {patient.device_info?.gender && (
+                    <Typography variant="caption" color="text.secondary">
+                        ({patient.device_info.gender}, {patient.device_info.age || 'N/A'})
+                    </Typography>
+                )}
+            </Box>
+        </MenuItem>
+    ), []);
+
+    /**
+     * MEMOIZED COMPONENT: Compare Button
+     * PURPOSE: Optimize button rendering with proper disabled state
+     * OPTIMIZATION: Prevents unnecessary re-renders when props haven't changed
+     */
+    const compareButton = useMemo(() => (
+        <Button
+            onClick={handleCompare}
+            variant="contained"
+            startIcon={<CompareIcon />}
+            disabled={!patient1 || !patient2 || patient1 === patient2}
+            fullWidth
+            size="small"
+        >
+            Compare
+        </Button>
+    ), [handleCompare, patient1, patient2]);
 
     return (
         <Paper sx={{ p: 3, mb: 3 }}>
@@ -69,19 +189,7 @@ const PatientComparison = ({ patients }) => {
                             label="Patient 1"
                             onChange={(e) => setPatient1(e.target.value)}
                         >
-                            {availablePatients.map((patient) => (
-                                <MenuItem key={patient.username} value={patient.username}>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                        <PersonIcon fontSize="small" />
-                                        {patient.username}
-                                        {patient.device_info?.gender && (
-                                            <Typography variant="caption" color="text.secondary">
-                                                ({patient.device_info.gender}, {patient.device_info.age || 'N/A'})
-                                            </Typography>
-                                        )}
-                                    </Box>
-                                </MenuItem>
-                            ))}
+                            {availablePatients.map(renderPatientOption)}
                         </Select>
                     </FormControl>
                 </Grid>
@@ -98,19 +206,7 @@ const PatientComparison = ({ patients }) => {
                             label="Patient 2"
                             onChange={(e) => setPatient2(e.target.value)}
                         >
-                            {availablePatients.map((patient) => (
-                                <MenuItem key={patient.username} value={patient.username}>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                        <PersonIcon fontSize="small" />
-                                        {patient.username}
-                                        {patient.device_info?.gender && (
-                                            <Typography variant="caption" color="text.secondary">
-                                                ({patient.device_info.gender}, {patient.device_info.age || 'N/A'})
-                                            </Typography>
-                                        )}
-                                    </Box>
-                                </MenuItem>
-                            ))}
+                            {availablePatients.map(renderPatientOption)}
                         </Select>
                     </FormControl>
                 </Grid>
@@ -119,9 +215,7 @@ const PatientComparison = ({ patients }) => {
                     <ToggleButtonGroup
                         value={biomarkerType}
                         exclusive
-                        onChange={(event, newType) => {
-                            if (newType) setBiomarkerType(newType);
-                        }}
+                        onChange={handleBiomarkerChange}
                         size="small"
                         fullWidth
                     >
@@ -131,22 +225,15 @@ const PatientComparison = ({ patients }) => {
                 </Grid>
 
                 <Grid item xs={12} sm={2}>
-                    <Button
-                        onClick={handleCompare}
-                        variant="contained"
-                        startIcon={<CompareIcon />}
-                        disabled={!patient1 || !patient2 || patient1 === patient2}
-                        fullWidth
-                        size="small"
-                    >
-                        Compare
-                    </Button>
+                    {compareButton}
                 </Grid>
             </Grid>
 
             {availablePatients.length < 2 && (
                 <Alert severity="info" sx={{ mt: 2 }}>
                     At least 2 patients are required to use the comparison feature.
+                    {availablePatients.length === 0 && " No patients are currently available."}
+                    {availablePatients.length === 1 && " Only 1 patient is currently available."}
                 </Alert>
             )}
         </Paper>

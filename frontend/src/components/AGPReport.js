@@ -38,7 +38,6 @@ import Plot from "react-plotly.js";
 import {
   Container,
   Typography,
-  Paper,
   Box,
   Grid,
   Card,
@@ -626,54 +625,6 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
 
   // Destructure chart configuration for use in render
   const { ranges, rangeValues, rangeLabels, rangeColors, unit } = chartConfiguration;
-
-  // Time in Range Bar Chart Data for Plotly
-  const timeInRangeData = [
-    {
-      x: rangeLabels,
-      y: rangeValues,
-      type: "bar",
-      marker: {
-        color: rangeColors,
-        line: { color: "#333", width: 1 }
-      },
-      text: rangeValues.map(val => `${val}%`),
-      textposition: "auto",
-      textfont: { color: "white", size: 14, family: "Arial Black" },
-      hovertemplate: "<b>%{x}</b><br>%{y}%<extra></extra>",
-    },
-  ];
-
-  const timeInRangeLayout = {
-    title: {
-      text: biomarkerType === 'glucose' 
-        ? "Time In Ranges<br><sub>Goals for Type 1 and Type 2 Diabetes</sub>"
-        : "Time In Ranges<br><sub>Cortisol Level Distribution</sub>",
-      font: { size: 18, family: "Arial" },
-    },
-    xaxis: {
-      title: {
-        text: `${biomarkerType === 'glucose' ? 'Glucose' : 'Cortisol'} Range (${unit})`,
-        font: { size: 14 }
-      },
-      tickfont: { size: 12 }
-    },
-    yaxis: {
-      title: {
-        text: "Percentage (%)",
-        font: { size: 14 }
-      },
-      range: [0, 100],
-      tickfont: { size: 12 }
-    },
-    margin: { l: 80, r: 40, t: 100, b: 80 },
-    height: 400,
-    width: 600,
-    showlegend: false,
-    bargap: 0.4,
-    plot_bgcolor: "white",
-    paper_bgcolor: "white",
-  };
 
   // AGP Chart Data for Plotly
   const hourLabels = Array.from({ length: 24 }, (_, i) => `${i}:00`);

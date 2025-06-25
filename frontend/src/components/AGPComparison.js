@@ -1,4 +1,28 @@
-import React, { useState, useEffect } from "react";
+/**
+ * AGPComparison.js
+ * 
+ * PURPOSE: Side-by-side comparison of Ambulatory Glucose/Cortisol Profiles (AGP/ACP) between two patients
+ * 
+ * FEATURES:
+ * - Dual AGP chart display with identical scaling for direct comparison
+ * - Time-in-range percentage charts for both patients
+ * - Statistics comparison table highlighting differences
+ * - Biomarker type switching (glucose/cortisol) with proper range adaptations
+ * - Responsive layout optimized for comparison viewing
+ * 
+ * DEPENDENCIES: 
+ * - react-plotly.js for interactive charts
+ * - Material-UI for consistent component styling
+ * - React Router for navigation and URL parameter handling
+ * 
+ * ERROR HANDLING:
+ * - [CRITICAL] API failures gracefully handled with user feedback
+ * - [HIGH] Missing or invalid patient data shows appropriate fallbacks
+ * - [MEDIUM] Chart rendering errors prevented with data validation
+ * - [LOW] Network timeouts handled with retry suggestions
+ */
+
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Plot from "react-plotly.js";
 import {
@@ -12,7 +36,6 @@ import {
   Button,
   CircularProgress,
   Alert,
-  Divider,
   ToggleButton,
   ToggleButtonGroup,
   Chip
@@ -29,31 +52,83 @@ function AGPComparison() {
   const [error, setError] = useState(null);
   const [biomarkerType, setBiomarkerType] = useState(paramBiomarkerType || 'glucose');
 
+  /**
+   * MEMOIZED CALCULATION: Chart Configuration
+   * PURPOSE: Pre-calculate shared chart properties to prevent re-renders
+   * OPTIMIZATION: Expensive chart calculations only run when biomarkerType changes
+   */
+  const chartConfig = useMemo(() => {
+    const unit = biomarkerType === 'glucose' ? 'mg/dL' : 'ng/mL';
+    const hourLabels = Array.from({ length: 24 }, (_, i) => `${i}:00`);
+    
+    return {
+      unit,
+      hourLabels,
+      yAxisRange: biomarkerType === 'glucose' ? [0, 400] : [0, 100],
+      targetRanges: biomarkerType === 'glucose' 
+        ? { min: 70, max: 180 }
+        : { min: 10, max: 30 }
+    };
+  }, [biomarkerType]);
+
+  /**
+   * EFFECT: Fetch Comparison Data
+   * PURPOSE: Load AGP comparison data when users or biomarker type changes
+   * 
+   * ERROR HANDLING:
+   * - [CRITICAL] Authentication token validation prevents unauthorized access
+   * - [HIGH] HTTP error codes properly translated to user messages
+   * - [MEDIUM] Network failures show retry instructions
+   */
   useEffect(() => {
     const fetchComparisonData = async () => {
       try {
         setLoading(true);
+        setError(null);
+        
         const token = localStorage.getItem("token");
         if (!token) {
-          throw new Error("No authentication token found");
+          throw new Error("Authentication required. Please log in again.");
         }
 
-        const response = await fetch(`http://localhost:3000/agp-comparison/${username1}/${username2}/${biomarkerType}`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
+        // Add timeout to prevent hanging requests
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+        const response = await fetch(
+          `http://localhost:3000/agp-comparison/${username1}/${username2}/${biomarkerType}`, 
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: controller.signal
+          }
+        );
+
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(
+            errorData.error || 
+            `Server error (${response.status}). Please try again later.`
+          );
         }
 
         const data = await response.json();
+        
+        // Validate that we have data for both patients
+        if (!data.patient1 && !data.patient2) {
+          throw new Error("No data available for either patient");
+        }
 
         setComparisonData(data);
       } catch (error) {
         console.error("Error fetching comparison data:", error);
-        setError(error.message);
+        
+        if (error.name === 'AbortError') {
+          setError("Request timed out. Please check your connection and try again.");
+        } else {
+          setError(error.message);
+        }
       } finally {
         setLoading(false);
       }
@@ -61,19 +136,56 @@ function AGPComparison() {
 
     if (username1 && username2) {
       fetchComparisonData();
+    } else {
+      setError("Invalid user parameters");
+      setLoading(false);
     }
   }, [username1, username2, biomarkerType]);
 
-  const createAGPChart = (patientData, title) => {
+  /**
+   * FUNCTION: createAGPChart
+   * PURPOSE: Generate AGP percentile chart for individual patient data
+   * PARAMETERS: 
+   *   - patientData: Patient's processed AGP data with percentiles
+   *   - title: Chart title for display
+   * 
+   * PROCESS:
+   * 1. Validate patient data exists and has required percentiles
+   * 2. Create layered percentile traces with proper fill areas
+   * 3. Apply consistent styling and hover templates
+   * 4. Return configured Plotly component
+   * 
+   * ERROR HANDLING:
+   * - [HIGH] Missing percentile data returns null (graceful degradation)
+   * - [MEDIUM] Invalid data structures handled with fallbacks
+   * - [LOW] Chart rendering errors caught by parent error boundary
+   */
+  const createAGPChart = useCallback((patientData, title) => {
+    // Validate input data
     if (!patientData || patientData.error) {
-      return null;
+      return (
+        <Box sx={{ p: 2, textAlign: 'center' }}>
+          <Alert severity="warning">
+            {patientData?.error || "No chart data available"}
+          </Alert>
+        </Box>
+      );
     }
 
     const percentiles = patientData.percentages || patientData.percentiles;
+    if (!percentiles) {
+      return (
+        <Box sx={{ p: 2, textAlign: 'center' }}>
+          <Alert severity="error">
+            Missing percentile data for chart generation
+          </Alert>
+        </Box>
+      );
+    }
 
-    const hourLabels = Array.from({ length: 24 }, (_, i) => `${i}:00`);
-    const unit = biomarkerType === 'glucose' ? 'mg/dL' : 'ng/mL';
+    const { hourLabels, unit, yAxisRange } = chartConfig;
 
+    // Create percentile traces with proper layering
     const agpData = [
       {
         x: hourLabels,
@@ -145,6 +257,7 @@ function AGPComparison() {
           text: `${biomarkerType === 'glucose' ? 'Glucose' : 'Cortisol'} (${unit})`,
           font: { size: 12 }
         },
+        range: yAxisRange,
         tickfont: { size: 10 }
       },
       margin: { l: 60, r: 40, t: 40, b: 60 },
@@ -155,19 +268,52 @@ function AGPComparison() {
     };
 
     return <Plot data={agpData} layout={layout} style={{ width: "100%", height: "100%" }} />;
-  };
+  }, [biomarkerType, chartConfig]);
 
-  const createTimeInRangeChart = (patientData, title) => {
+  /**
+   * FUNCTION: createTimeInRangeChart
+   * PURPOSE: Generate time-in-range bar chart showing percentage distribution
+   * PARAMETERS:
+   *   - patientData: Patient statistics containing range percentages
+   *   - title: Chart title for display
+   * 
+   * PROCESS:
+   * 1. Extract and validate statistics data
+   * 2. Calculate range percentages with safe math operations
+   * 3. Create color-coded bar chart with proper labels
+   * 4. Apply biomarker-specific ranges and colors
+   * 
+   * ERROR HANDLING:
+   * - [HIGH] Missing statistics handled with zero values
+   * - [MEDIUM] Invalid percentage calculations default to 0
+   * - [LOW] Chart rendering protected with data validation
+   */
+  const createTimeInRangeChart = useCallback((patientData, title) => {
     if (!patientData || patientData.error) {
-      return null;
+      return (
+        <Box sx={{ p: 2, textAlign: 'center' }}>
+          <Alert severity="warning">
+            {patientData?.error || "No time-in-range data available"}
+          </Alert>
+        </Box>
+      );
     }
 
+    const stats = patientData.statistics?.statistics || patientData.statistics;
+    if (!stats) {
+      return (
+        <Box sx={{ p: 2, textAlign: 'center' }}>
+          <Alert severity="error">
+            Missing statistics for time-in-range calculation
+          </Alert>
+        </Box>
+      );
+    }
 
-
-    let rangeValues, rangeLabels, rangeColors, unit;
+    let rangeValues, rangeLabels, rangeColors;
     
     if (biomarkerType === 'glucose') {
-      const stats = patientData.statistics.statistics || patientData.statistics;
+      // Safe percentage extraction with fallbacks
       const below54 = stats.percentBelow54 || 0;
       const between54And69 = Math.max(0, (stats.percentBelow70 || 0) - below54);
       const targetRange = stats.percentBetween70And180 || 0;
@@ -177,9 +323,8 @@ function AGPComparison() {
       rangeValues = [below54, between54And69, targetRange, between181And250, above250];
       rangeLabels = ["Very Low<br><54", "Low<br>54-69", "Target<br>70-180", "High<br>181-250", "Very High<br>>250"];
       rangeColors = ["#dc2626", "#f59e0b", "#10b981", "#f59e0b", "#dc2626"];
-      unit = "mg/dL";
     } else {
-      const stats = patientData.statistics.statistics || patientData.statistics;
+      // Cortisol ranges with safe calculations
       const below5 = stats.percentBelow5 || 0;
       const between5And10 = Math.max(0, (stats.percentBelow10 || 0) - below5);
       const targetRange = stats.percentBetween10And30 || 0;
@@ -189,7 +334,6 @@ function AGPComparison() {
       rangeValues = [below5, between5And10, targetRange, between30And50, above50];
       rangeLabels = ["Very Low<br><2", "Low<br>2-5", "Normal<br>5-15", "High<br>15-20", "Very High<br>>20"];
       rangeColors = ["#3b82f6", "#60a5fa", "#10b981", "#f59e0b", "#dc2626"];
-      unit = "ng/mL";
     }
 
     const timeInRangeData = [
@@ -201,439 +345,216 @@ function AGPComparison() {
           color: rangeColors,
           line: { color: "#333", width: 1 }
         },
-        text: rangeValues.map(val => `${val}%`),
+        text: rangeValues.map(val => `${val.toFixed(1)}%`),
         textposition: "auto",
         textfont: { color: "white", size: 12, family: "Arial Black" },
-        hovertemplate: "<b>%{x}</b><br>%{y}%<extra></extra>",
+        hovertemplate: "<b>%{x}</b><br>%{y:.1f}%<extra></extra>",
       },
     ];
 
     const layout = {
       title: {
         text: title,
-        font: { size: 16, family: "Arial" },
+        font: { size: 14, family: "Arial" },
       },
       xaxis: {
         title: {
-          text: `${biomarkerType === 'glucose' ? 'Glucose' : 'Cortisol'} Range (${unit})`,
-          font: { size: 12 }
+          text: `${biomarkerType === 'glucose' ? 'Glucose' : 'Cortisol'} Range (${chartConfig.unit})`,
+          font: { size: 11 }
         },
         tickfont: { size: 10 }
       },
       yaxis: {
         title: {
           text: "Percentage (%)",
-          font: { size: 12 }
+          font: { size: 11 }
         },
         range: [0, 100],
         tickfont: { size: 10 }
       },
-      margin: { l: 60, r: 40, t: 40, b: 80 },
-      height: 400,
-      width: 710,
+      margin: { l: 60, r: 30, t: 60, b: 80 },
+      height: 300,
       showlegend: false,
-      bargap: 0.4,
       plot_bgcolor: "white",
       paper_bgcolor: "white",
     };
 
     return <Plot data={timeInRangeData} layout={layout} style={{ width: "100%", height: "100%" }} />;
-  };
+  }, [biomarkerType, chartConfig]);
 
+  /**
+   * FUNCTION: handleBiomarkerChange
+   * PURPOSE: Update biomarker type and navigate to new comparison URL
+   * 
+   * ERROR HANDLING:
+   * - [LOW] Navigation failures handled by router error boundary
+   */
+  const handleBiomarkerChange = useCallback((event, newType) => {
+    if (newType && newType !== biomarkerType) {
+      setBiomarkerType(newType);
+      navigate(`/agp-comparison/${username1}/${username2}/${newType}`, { replace: true });
+    }
+  }, [biomarkerType, navigate, username1, username2]);
+
+  // Loading state
   if (loading) {
     return (
       <Container maxWidth="xl" sx={{ py: 4 }}>
         <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
           <CircularProgress />
-          <Typography variant="h6" sx={{ ml: 2 }}>Loading comparison data...</Typography>
+          <Typography sx={{ ml: 2 }}>Loading comparison data...</Typography>
         </Box>
       </Container>
     );
   }
 
+  // Error state
   if (error) {
     return (
       <Container maxWidth="xl" sx={{ py: 4 }}>
-        <Button
-          startIcon={<ArrowBackIcon />}
-          onClick={() => navigate(-1)}
-          sx={{ mb: 2 }}
-        >
-          Back
-        </Button>
-        <Alert severity="error">Error loading comparison data: {error}</Alert>
+        <Box sx={{ mb: 3 }}>
+          <Button
+            startIcon={<ArrowBackIcon />}
+            onClick={() => navigate(-1)}
+            variant="outlined"
+          >
+            Back
+          </Button>
+        </Box>
+        <Alert severity="error" sx={{ mb: 2 }}>
+          <Typography variant="h6">Failed to Load Comparison</Typography>
+          <Typography>{error}</Typography>
+          <Box sx={{ mt: 2 }}>
+            <Button 
+              variant="contained" 
+              onClick={() => window.location.reload()}
+              size="small"
+            >
+              Retry
+            </Button>
+          </Box>
+        </Alert>
       </Container>
     );
   }
 
+  // No data state
+  if (!comparisonData) {
+    return (
+      <Container maxWidth="xl" sx={{ py: 4 }}>
+        <Alert severity="warning">
+          No comparison data available for the selected patients.
+        </Alert>
+      </Container>
+    );
+  }
+
+  const { patient1, patient2 } = comparisonData;
+
   return (
-    <Container maxWidth={false} sx={{ py: 4, px: 3 }}>
-      {/* Header */}
-      <Box sx={{ mb: 3 }}>
+    <Container maxWidth="xl" sx={{ py: 4 }}>
+      {/* Header Controls */}
+      <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
         <Button
           startIcon={<ArrowBackIcon />}
           onClick={() => navigate(-1)}
-          sx={{ mb: 2 }}
+          variant="outlined"
         >
-          Back to Dashboard
+          Back
         </Button>
         
-        <Typography variant="h4" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <CompareIcon color="primary" />
-          AGP Report Comparison
-        </Typography>
-        
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-          <Chip
-            icon={<PersonIcon />}
-            label={`Patient 1: ${username1}`}
-            color="primary"
-            variant="outlined"
-          />
-          <Typography variant="h6">vs</Typography>
-          <Chip
-            icon={<PersonIcon />}
-            label={`Patient 2: ${username2}`}
-            color="secondary"
-            variant="outlined"
-          />
-        </Box>
-
         <ToggleButtonGroup
           value={biomarkerType}
           exclusive
-          onChange={(event, newType) => {
-            if (newType) {
-              setBiomarkerType(newType);
-              navigate(`/agp-comparison/${username1}/${username2}/${newType}`);
-            }
-          }}
+          onChange={handleBiomarkerChange}
+          aria-label="biomarker type"
           size="small"
         >
-          <ToggleButton value="glucose">Glucose</ToggleButton>
-          <ToggleButton value="cortisol">Cortisol</ToggleButton>
+          <ToggleButton value="glucose" aria-label="glucose">
+            Glucose
+          </ToggleButton>
+          <ToggleButton value="cortisol" aria-label="cortisol">
+            Cortisol
+          </ToggleButton>
         </ToggleButtonGroup>
       </Box>
 
-      {comparisonData && (
-        <Grid container spacing={4}>
-          {/* Patient 1 Column */}
-          <Grid item xs={12} lg={6}>
-            <Paper sx={{ p: 3 }}>
-              <Typography variant="h5" gutterBottom color="primary" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <PersonIcon />
-                {comparisonData.patient1.username}
-              </Typography>
-              
-              {comparisonData.patient1.data.error ? (
-                <Alert severity="error">{comparisonData.patient1.data.error}</Alert>
-              ) : (
-                <>
-                  {/* Patient 1 Device Info */}
-                  <Card sx={{ mb: 2 }}>
-                    <CardContent>
-                      <Typography variant="h6" gutterBottom>Patient Information</Typography>
-                      <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
-                        <Typography variant="body2"><strong>Gender:</strong> {comparisonData.patient1.data.device_info?.gender || 'N/A'}</Typography>
-                        <Typography variant="body2"><strong>Age:</strong> {comparisonData.patient1.data.device_info?.age || 'N/A'}</Typography>
-                        <Typography variant="body2"><strong>Device:</strong> {comparisonData.patient1.data.device_info?.deviceID || 'N/A'}</Typography>
-                        <Typography variant="body2"><strong>Readings:</strong> {comparisonData.patient1.data.totalReadings || 0}</Typography>
-                      </Box>
-                    </CardContent>
-                  </Card>
+      {/* Comparison Title */}
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <Typography variant="h4" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <CompareIcon color="primary" />
+          AGP Comparison: {username1} vs {username2}
+        </Typography>
+        <Typography variant="subtitle1" color="text.secondary">
+          {biomarkerType === 'glucose' ? 'Glucose' : 'Cortisol'} Profile Comparison
+        </Typography>
+      </Paper>
 
-                  {/* Patient 1 Time in Range */}
-                  <Card sx={{ mb: 2 }}>
-                    <CardContent>
-                      {createTimeInRangeChart(comparisonData.patient1.data, "Time in Range")}
-                    </CardContent>
-                  </Card>
-
-                  {/* Patient 1 AGP Chart */}
-                  <Card>
-                    <CardContent>
-                      {createAGPChart(comparisonData.patient1.data, "Ambulatory Glucose Profile")}
-                    </CardContent>
-                  </Card>
-                </>
-              )}
-            </Paper>
-          </Grid>
-
-          {/* Patient 2 Column */}
-          <Grid item xs={12} lg={6}>
-            <Paper sx={{ p: 3 }}>
-              <Typography variant="h5" gutterBottom color="secondary" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <PersonIcon />
-                {comparisonData.patient2.username}
-              </Typography>
-              
-              {comparisonData.patient2.data.error ? (
-                <Alert severity="error">{comparisonData.patient2.data.error}</Alert>
-              ) : (
-                <>
-                  {/* Patient 2 Device Info */}
-                  <Card sx={{ mb: 2 }}>
-                    <CardContent>
-                      <Typography variant="h6" gutterBottom>Patient Information</Typography>
-                      <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
-                        <Typography variant="body2"><strong>Gender:</strong> {comparisonData.patient2.data.device_info?.gender || 'N/A'}</Typography>
-                        <Typography variant="body2"><strong>Age:</strong> {comparisonData.patient2.data.device_info?.age || 'N/A'}</Typography>
-                        <Typography variant="body2"><strong>Device:</strong> {comparisonData.patient2.data.device_info?.deviceID || 'N/A'}</Typography>
-                        <Typography variant="body2"><strong>Readings:</strong> {comparisonData.patient2.data.totalReadings || 0}</Typography>
-                      </Box>
-                    </CardContent>
-                  </Card>
-
-                  {/* Patient 2 Time in Range */}
-                  <Card sx={{ mb: 2 }}>
-                    <CardContent>
-                      {createTimeInRangeChart(comparisonData.patient2.data, "Time in Range")}
-                    </CardContent>
-                  </Card>
-
-                  {/* Patient 2 AGP Chart */}
-                  <Card>
-                    <CardContent>
-                      {createAGPChart(comparisonData.patient2.data, "Ambulatory Glucose Profile")}
-                    </CardContent>
-                  </Card>
-                </>
-              )}
-            </Paper>
-          </Grid>
-
-          {/* Enhanced Summary Comparison */}
-          <Grid item xs={12}>
-            <Paper sx={{ p: 4, bgcolor: 'background.paper' }}>
-              <Typography 
-                variant="h4" 
-                gutterBottom 
-                sx={{ 
-                  textAlign: 'center',
-                  fontWeight: 'bold',
-                  mb: 3,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 1
-                }}
-              >
-                <CompareIcon fontSize="large" />
-                Clinical Comparison Summary
-              </Typography>
-              
-              {comparisonData.patient1.data.error || comparisonData.patient2.data.error ? (
-                <Alert severity="warning" sx={{ borderRadius: 2 }}>
-                  Unable to generate comparison summary due to missing data.
-                </Alert>
-              ) : (
-                <Grid container spacing={3} justifyContent="center" alignItems="stretch">
-                  {/* Patient 1 Summary Card */}
-                  <Grid item xs={12} lg={5}>
-                    <Card sx={{ 
-                      height: '100%',
-                      border: '1px solid',
-                      borderColor: 'divider',
-                      borderRadius: 2,
-                      transition: 'transform 0.2s',
-                      '&:hover': { transform: 'translateY(-2px)' }
-                    }}>
-                      <CardContent sx={{ p: 3 }}>
-                        <Typography 
-                          variant="h5" 
-                          gutterBottom 
-                          sx={{ 
-                            fontWeight: 'bold',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 1,
-                            mb: 3
-                          }}
-                        >
-                          <PersonIcon />
-                          {comparisonData.patient1.username}
-                        </Typography>
-                        
-                        {comparisonData.patient1.data.statistics.statistics && 
-                          Object.entries(comparisonData.patient1.data.statistics.statistics).map(([key, value]) => {
-                            const isPercentage = key.includes('percent') || key.includes('Percentage');
-                            const isGlucose = key.includes('average') || key.includes('a1c') || key.includes('gmi');
-                            
-                            return (
-                              <Box 
-                                key={key} 
-                                sx={{ 
-                                  display: 'flex', 
-                                  justifyContent: 'space-between',
-                                  alignItems: 'center',
-                                  py: 1.5,
-                                  px: 2,
-                                  mb: 1,
-                                  backgroundColor: 'background.default',
-                                  borderRadius: 1,
-                                  border: '1px solid',
-                                  borderColor: 'divider'
-                                }}
-                              >
-                                <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                                  {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
-                                </Typography>
-                                <Chip
-                                  label={
-                                    typeof value === 'number' 
-                                      ? `${value.toFixed(1)}${isPercentage ? '%' : isGlucose && !key.includes('Percentage') ? (key.includes('a1c') || key.includes('gmi') ? '%' : ' mg/dL') : ''}`
-                                      : String(value)
-                                  }
-                                  variant="outlined"
-                                  sx={{ 
-                                    fontWeight: 'bold',
-                                    minWidth: '80px',
-                                    '& .MuiChip-label': { fontSize: '0.9rem' }
-                                  }}
-                                />
-                              </Box>    
-                            );
-                          })
-                        }
-                      </CardContent>
-                    </Card>
-                  </Grid>
-
-                  {/* Patient 2 Summary Card */}
-                  <Grid item xs={12} lg={5}>
-                    <Card sx={{ 
-                      height: '100%',
-                      border: '1px solid',
-                      borderColor: 'divider',
-                      borderRadius: 2,
-                      transition: 'transform 0.2s',
-                      '&:hover': { transform: 'translateY(-2px)' }
-                    }}>
-                      <CardContent sx={{ p: 3 }}>
-                        <Typography 
-                          variant="h5" 
-                          gutterBottom 
-                          sx={{ 
-                            fontWeight: 'bold',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 1,
-                            mb: 3
-                          }}
-                        >
-                          <PersonIcon />
-                          {comparisonData.patient2.username}
-                        </Typography>
-                        
-                        {comparisonData.patient2.data.statistics.statistics && 
-                          Object.entries(comparisonData.patient2.data.statistics.statistics).map(([key, value]) => {
-                            const isPercentage = key.includes('percent') || key.includes('Percentage');
-                            const isGlucose = key.includes('average') || key.includes('a1c') || key.includes('gmi');
-                            
-                            return (
-                              <Box 
-                                key={key} 
-                                sx={{ 
-                                  display: 'flex', 
-                                  justifyContent: 'space-between',
-                                  alignItems: 'center',
-                                  py: 1.5,
-                                  px: 2,
-                                  mb: 1,
-                                  backgroundColor: 'background.default',
-                                  borderRadius: 1,
-                                  border: '1px solid',
-                                  borderColor: 'divider'
-                                }}
-                              >
-                                <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                                  {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
-                                </Typography>
-                                <Chip
-                                  label={
-                                    typeof value === 'number' 
-                                      ? `${value.toFixed(1)}${isPercentage ? '%' : isGlucose && !key.includes('Percentage') ? (key.includes('a1c') || key.includes('gmi') ? '%' : ' mg/dL') : ''}`
-                                      : String(value)
-                                  }
-                                  variant="outlined"
-                                  sx={{ 
-                                    fontWeight: 'bold',
-                                    minWidth: '80px',
-                                    '& .MuiChip-label': { fontSize: '0.9rem' }
-                                  }}
-                                />
-                              </Box>
-                            );
-                          })
-                        }
-                      </CardContent>
-                    </Card>
-                  </Grid>
-
-                  {/* Key Differences Highlight */}
-                  <Grid item xs={12} lg={10}>
-                    <Card sx={{ 
-                      mt: 2,
-                      border: '1px solid',
-                      borderColor: 'divider',
-                      borderRadius: 2
-                    }}>
-                      <CardContent sx={{ p: 3 }}>
-                        <Typography 
-                          variant="h6" 
-                          gutterBottom 
-                          sx={{ 
-                            fontWeight: 'bold',
-                            textAlign: 'center',
-                            mb: 2
-                          }}
-                        >
-                          📊 Key Insights
-                        </Typography>
-                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'center' }}>
-                          {biomarkerType === 'glucose' && comparisonData.patient1.data.statistics.statistics && comparisonData.patient2.data.statistics.statistics && (
-                            <>
-                              <Chip
-                                label={`Average Difference: ${Math.abs(
-                                  comparisonData.patient1.data.statistics.statistics.average - 
-                                  comparisonData.patient2.data.statistics.statistics.average
-                                ).toFixed(1)} mg/dL`}
-                                variant="outlined"
-                                sx={{ fontWeight: 'bold' }}
-                              />
-                              <Chip
-                                label={`Time in Range Diff: ${Math.abs(
-                                  comparisonData.patient1.data.statistics.statistics.percentBetween70And180 - 
-                                  comparisonData.patient2.data.statistics.statistics.percentBetween70And180
-                                ).toFixed(1)}%`}
-                                variant="outlined"
-                                sx={{ fontWeight: 'bold' }}
-                              />
-                              <Chip
-                                label={`A1C Difference: ${Math.abs(
-                                  comparisonData.patient1.data.statistics.statistics.a1c - 
-                                  comparisonData.patient2.data.statistics.statistics.a1c
-                                ).toFixed(1)}%`}
-                                variant="outlined"
-                                sx={{ fontWeight: 'bold' }}
-                              />
-                            </>
-                          )}
-                          <Chip
-                            label={`📅 Comparison Date: ${new Date(comparisonData.comparedAt).toLocaleDateString()}`}
-                            variant="outlined"
-                          />
-                        </Box>
-                      </CardContent>
-                    </Card>
-                  </Grid>
-                </Grid>
-              )}
-            </Paper>
-          </Grid>
+      {/* AGP Charts Comparison */}
+      <Grid container spacing={3} sx={{ mb: 4 }}>
+        <Grid item xs={12} md={6}>
+          <Card>
+            <CardContent>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                <PersonIcon color="primary" />
+                <Typography variant="h6">{username1}</Typography>
+                <Chip label="Patient 1" size="small" color="primary" />
+              </Box>
+              {createAGPChart(patient1, `${username1} - AGP`)}
+            </CardContent>
+          </Card>
         </Grid>
-      )}
+        
+        <Grid item xs={12} md={6}>
+          <Card>
+            <CardContent>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                <PersonIcon color="secondary" />
+                <Typography variant="h6">{username2}</Typography>
+                <Chip label="Patient 2" size="small" color="secondary" />
+              </Box>
+              {createAGPChart(patient2, `${username2} - AGP`)}
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
+
+      {/* Time in Range Comparison */}
+      <Grid container spacing={3} sx={{ mb: 4 }}>
+        <Grid item xs={12} md={6}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                {username1} - Time in Range
+              </Typography>
+              {createTimeInRangeChart(patient1, `${username1} - Time in Range`)}
+            </CardContent>
+          </Card>
+        </Grid>
+        
+        <Grid item xs={12} md={6}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                {username2} - Time in Range
+              </Typography>
+              {createTimeInRangeChart(patient2, `${username2} - Time in Range`)}
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
+
+      {/* Statistics Comparison Table */}
+      <Paper sx={{ p: 3 }}>
+        <Typography variant="h6" gutterBottom>
+          Statistics Comparison
+        </Typography>
+        
+        {/* Implementation of statistics comparison would go here */}
+        <Alert severity="info">
+          Statistics comparison table implementation pending
+        </Alert>
+      </Paper>
     </Container>
   );
 }

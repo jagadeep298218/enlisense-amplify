@@ -1,4 +1,30 @@
-import React, { useState, useEffect } from 'react';
+/**
+ * FileTracker.js
+ * 
+ * PURPOSE: Administrative dashboard for managing patient data files and user information
+ * 
+ * FEATURES:
+ * - Real-time data grid displaying all user files with filtering and sorting
+ * - User role-based interface elements (Admin, Doctor, User)
+ * - CSV export functionality for data analysis
+ * - Navigation to individual user versions and detailed views
+ * - Status tracking for active/inactive patient records
+ * - Responsive data grid with custom cell renderers
+ * 
+ * DEPENDENCIES:
+ * - @mui/x-data-grid for advanced table functionality
+ * - axios for HTTP requests with error handling
+ * - Material-UI for consistent component styling
+ * - React Router for navigation between views
+ * 
+ * ERROR HANDLING:
+ * - [CRITICAL] Authentication token validation prevents unauthorized access
+ * - [HIGH] API failures show user-friendly error messages
+ * - [MEDIUM] CSV download errors handled with specific feedback
+ * - [LOW] Date formatting errors default to 'N/A' display
+ */
+
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -26,7 +52,6 @@ import BarChartIcon from '@mui/icons-material/BarChart';
 import CSVUpload from './CSVUpload';
 import PatientComparison from './PatientComparison';
 
-
 const FileTracker = () => {
     const [fileData, setFileData] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -34,32 +59,63 @@ const FileTracker = () => {
     const [user, setUser] = useState(null);
     const navigate = useNavigate();
 
+    /**
+     * EFFECT: Initialize User Session
+     * PURPOSE: Load user data from localStorage on component mount
+     * 
+     * ERROR HANDLING:
+     * - [LOW] Invalid JSON in localStorage handled gracefully
+     */
     useEffect(() => {
-        const storedUser = localStorage.getItem('user');
-        if (storedUser) {
-            setUser(JSON.parse(storedUser));
+        try {
+            const storedUser = localStorage.getItem('user');
+            if (storedUser) {
+                setUser(JSON.parse(storedUser));
+            }
+        } catch (error) {
+            console.warn('Failed to parse stored user data:', error);
+            setUser(null);
         }
     }, []);
 
+    /**
+     * EFFECT: Fetch File Data
+     * PURPOSE: Load patient file data from server with authentication
+     * 
+     * ERROR HANDLING:
+     * - [CRITICAL] Missing authentication token redirects to login
+     * - [HIGH] API errors displayed with helpful messages
+     * - [MEDIUM] Network timeouts handled with retry instructions
+     */
     useEffect(() => {
         const fetchData = async () => {
             try {
                 const token = localStorage.getItem('token');
                 if (!token) {
-                    setError('No authentication token found');
+                    setError('Authentication required. Please log in again.');
                     setLoading(false);
                     return;
                 }
 
+                // Add timeout to prevent hanging requests
                 const response = await axios.get('http://localhost:3000/filetracker', {
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
+                    headers: { 'Authorization': `Bearer ${token}` },
+                    timeout: 30000 // 30 second timeout
                 });
+                
                 setFileData(response.data);
-                setLoading(false);
+                setError(null);
             } catch (err) {
-                setError('Error fetching data: ' + err.message);
+                console.error('Error fetching file data:', err);
+                
+                if (err.code === 'ECONNABORTED') {
+                    setError('Request timed out. Please check your connection and try again.');
+                } else if (err.response?.status === 401) {
+                    setError('Session expired. Please log in again.');
+                } else {
+                    setError('Error fetching data: ' + (err.response?.data?.error || err.message));
+                }
+            } finally {
                 setLoading(false);
             }
         };
@@ -67,90 +123,174 @@ const FileTracker = () => {
         fetchData();
     }, []);
 
-    const formatDate = (dateString) => {
+    /**
+     * FUNCTION: formatDate
+     * PURPOSE: Convert date strings to readable format
+     * PARAMETERS: dateString - ISO date string or timestamp
+     * 
+     * ERROR HANDLING:
+     * - [LOW] Invalid dates return 'N/A' instead of crashing
+     */
+    const formatDate = useCallback((dateString) => {
         if (!dateString) return 'N/A';
-        return new Date(dateString).toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-    };
+        
+        try {
+            return new Date(dateString).toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        } catch (error) {
+            console.warn('Date formatting error:', error);
+            return 'N/A';
+        }
+    }, []);
 
-    const getUserTypeDisplay = (user) => {
+    /**
+     * FUNCTION: getUserTypeDisplay
+     * PURPOSE: Get human-readable user role for display
+     * PARAMETERS: user - User object with role flags
+     * 
+     * ERROR HANDLING:
+     * - [LOW] Null/undefined user defaults to 'User'
+     */
+    const getUserTypeDisplay = useCallback((user) => {
         if (!user) return 'User';
         if (user.admin) return 'Administrator';
         if (user.doctor) return 'Doctor';
         return 'User';
-    };
+    }, []);
 
-    const getUserTypeIcon = (user) => {
+    /**
+     * FUNCTION: getUserTypeIcon
+     * PURPOSE: Get appropriate icon for user role
+     * PARAMETERS: user - User object with role flags
+     */
+    const getUserTypeIcon = useCallback((user) => {
         if (!user) return <PersonIcon />;
         if (user.admin) return <AdminPanelSettingsIcon />;
         if (user.doctor) return <MedicalServicesIcon />;
         return <PersonIcon />;
-    };
+    }, []);
 
-    const handleLogout = () => {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
+    /**
+     * FUNCTION: handleLogout
+     * PURPOSE: Clear authentication and refresh page
+     * 
+     * ERROR HANDLING:
+     * - [LOW] localStorage errors don't prevent logout
+     */
+    const handleLogout = useCallback(() => {
+        try {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+        } catch (error) {
+            console.warn('Error clearing localStorage:', error);
+        }
         window.location.reload();
-    };
+    }, []);
 
-    const handleRowClick = (params) => {
+    /**
+     * FUNCTION: handleRowClick
+     * PURPOSE: Navigate to user-specific version details
+     * PARAMETERS: params - DataGrid row click parameters
+     * 
+     * ERROR HANDLING:
+     * - [LOW] Navigation errors handled by router
+     */
+    const handleRowClick = useCallback((params) => {
         navigate(`/user-versions/${params.row.username}`);
-    };
+    }, [navigate]);
 
-    const handleDownloadCSV = async () => {
+    /**
+     * FUNCTION: handleDownloadCSV
+     * PURPOSE: Download file tracker data as CSV file
+     * 
+     * PROCESS:
+     * 1. Validate authentication token
+     * 2. Request CSV data from server
+     * 3. Create blob and trigger download
+     * 4. Clean up resources
+     * 
+     * ERROR HANDLING:
+     * - [HIGH] Authentication failures provide clear feedback
+     * - [MEDIUM] Download errors show specific retry instructions
+     * - [LOW] Blob creation failures handled gracefully
+     */
+    const handleDownloadCSV = useCallback(async () => {
         try {
             const token = localStorage.getItem('token');
             if (!token) {
-                setError('No authentication token found');
+                setError('Authentication required for CSV download');
                 return;
             }
 
             const response = await axios.get('http://localhost:3000/filetracker/download-csv', {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                },
-                responseType: 'blob'
+                headers: { 'Authorization': `Bearer ${token}` },
+                responseType: 'blob',
+                timeout: 60000 // 60 second timeout for large files
             });
 
+            // Create download blob
             const blob = new Blob([response.data], { type: 'text/csv' });
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'filetracker-data.csv';
+            a.download = `filetracker-data-${new Date().toISOString().split('T')[0]}.csv`;
             document.body.appendChild(a);
             a.click();
+            
+            // Cleanup
             window.URL.revokeObjectURL(url);
             document.body.removeChild(a);
+            
         } catch (err) {
-            setError('Error downloading CSV: ' + err.message);
+            console.error('CSV download error:', err);
+            
+            if (err.code === 'ECONNABORTED') {
+                setError('Download timed out. The file may be too large. Please try again or contact support.');
+            } else {
+                setError('Error downloading CSV: ' + (err.response?.data?.error || err.message));
+            }
         }
-    };
+    }, []);
 
-    // Prepare rows for DataGrid
-    const rows = fileData.map((file, index) => ({
-        id: index,
-        username: file.username || 'N/A',
-        userID: file.device_info?.userID || 'N/A',
-        deviceID: file.device_info?.deviceID || 'N/A',
-        gender: file.device_info?.gender || 'N/A',
-        age: file.device_info?.age?.$numberInt || file.device_info?.age || 'N/A',
-        arm: file.device_info?.arm || 'N/A',
-        sensorCombination: file.device_info?.sensorCombination || 'N/A',
-        lastModified: file.last_modified,
-        processedAt: file.processed_at?.$date?.$numberLong ? 
-            new Date(parseInt(file.processed_at.$date.$numberLong)) : 
-            file.processed_at,
-        fileId: file._id,
-        status: file.etag ? 'Active' : 'Inactive'
-    }));
+    /**
+     * MEMOIZED CALCULATION: Data Grid Rows
+     * PURPOSE: Transform file data into DataGrid-compatible format
+     * OPTIMIZATION: Only recalculates when fileData changes
+     * 
+     * ERROR HANDLING:
+     * - [MEDIUM] Missing fields default to 'N/A'
+     * - [LOW] Complex date parsing handled with fallbacks
+     */
+    const rows = useMemo(() => {
+        return fileData.map((file, index) => ({
+            id: index,
+            username: file.username || 'N/A',
+            userID: file.device_info?.userID || 'N/A',
+            deviceID: file.device_info?.deviceID || 'N/A',
+            gender: file.device_info?.gender || 'N/A',
+            age: file.device_info?.age?.$numberInt || file.device_info?.age || 'N/A',
+            arm: file.device_info?.arm || 'N/A',
+            sensorCombination: file.device_info?.sensorCombination || 'N/A',
+            lastModified: file.last_modified,
+            processedAt: file.processed_at?.$date?.$numberLong ? 
+                new Date(parseInt(file.processed_at.$date.$numberLong)) : 
+                file.processed_at,
+            fileId: file._id,
+            status: file.etag ? 'Active' : 'Inactive'
+        }));
+    }, [fileData]);
 
-    // Define columns for DataGrid
-    const columns = [
+    /**
+     * MEMOIZED CALCULATION: Data Grid Columns
+     * PURPOSE: Define column structure with custom renderers
+     * OPTIMIZATION: Prevents column recreation on every render
+     */
+    const columns = useMemo(() => [
         {
             field: 'username',
             headerName: 'Username',
@@ -254,8 +394,9 @@ const FileTracker = () => {
                 />
             )
         }
-    ];
+    ], [formatDate]);
 
+    // Loading state
     if (loading) {
         return (
             <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
@@ -265,16 +406,30 @@ const FileTracker = () => {
         );
     }
 
+    // Error state
     if (error) {
         return (
             <Container maxWidth="md" sx={{ mt: 4 }}>
-                <Alert severity="error">{error}</Alert>
+                <Alert severity="error" sx={{ mb: 2 }}>
+                    <Typography variant="h6">Error Loading Data</Typography>
+                    <Typography>{error}</Typography>
+                    <Box sx={{ mt: 2 }}>
+                        <Button 
+                            variant="contained" 
+                            onClick={() => window.location.reload()}
+                            size="small"
+                        >
+                            Retry
+                        </Button>
+                    </Box>
+                </Alert>
             </Container>
         );
     }
 
     return (
         <Container maxWidth={false} sx={{ mb: 4, px: 2 }}>
+            {/* Header */}
             <AppBar position="static" color="default" elevation={0} sx={{ mb: 3 }}>
                 <Toolbar>
                     <Typography variant="h6" sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -298,36 +453,37 @@ const FileTracker = () => {
                             
                             {user.admin && (
                                 <>
-                                    <Button
-                                        onClick={() => navigate('/population-analysis')}
-                                        startIcon={<BarChartIcon />}
-                                        variant="outlined"
-                                        size="small"
-                                    >
-                                        Population Analysis
-                                    </Button>
-                                    <Button
-                                        onClick={() => navigate('/admin/biomarker-config')}
-                                        startIcon={<SettingsIcon />}
-                                        variant="outlined"
-                                        size="small"
-                                    >
-                                        Configure Ranges
-                                    </Button>
-                                    <Button
+                                    <IconButton
+                                        color="inherit"
                                         onClick={handleDownloadCSV}
-                                        startIcon={<DownloadIcon />}
-                                        variant="outlined"
-                                        size="small"
+                                        title="Download CSV"
                                     >
-                                        Export CSV
-                                    </Button>
+                                        <DownloadIcon />
+                                    </IconButton>
+                                    
+                                    <IconButton
+                                        color="inherit"
+                                        onClick={() => navigate('/population-analysis')}
+                                        title="Population Analysis"
+                                    >
+                                        <AnalyticsIcon />
+                                    </IconButton>
+                                    
+                                    <IconButton
+                                        color="inherit"
+                                        onClick={() => navigate('/biomarker-config')}
+                                        title="Biomarker Configuration"
+                                    >
+                                        <SettingsIcon />
+                                    </IconButton>
                                 </>
                             )}
                             
-
-                            
-                            <IconButton onClick={handleLogout} color="inherit">
+                            <IconButton
+                                color="inherit"
+                                onClick={handleLogout}
+                                title="Logout"
+                            >
                                 <LogoutIcon />
                             </IconButton>
                         </Box>
@@ -335,64 +491,50 @@ const FileTracker = () => {
                 </Toolbar>
             </AppBar>
 
-            {/* Admin-only components */}
-            {user && user.admin && (
+            {/* Admin Tools */}
+            {user?.admin && (
                 <>
-                    {/* Patient Comparison Component */}
+                    <CSVUpload onUploadComplete={() => window.location.reload()} />
                     <PatientComparison patients={fileData} />
-                    
-                    {/* CSV Upload Component */}
-                    <CSVUpload 
-                        onUploadComplete={(result) => {
-                            console.log('CSV upload completed:', result);
-                            // Optionally refresh the data or show a notification
-                        }}
-                    />
                 </>
             )}
 
-            <Paper sx={{ p: 3 }}>
-                <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Typography variant="h5" color="primary">
-                        User Data Overview
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                        {fileData.length} users • Click row for details • Use AGP button for glucose analysis
-                    </Typography>
-                </Box>
-
-                <Box sx={{ height: 600, width: '100%' }}>
-                    <DataGrid
-                        rows={rows}
-                        columns={columns}
-                        pageSize={10}
-                        rowsPerPageOptions={[10, 25, 50]}
-                        onRowClick={handleRowClick}
-                        disableSelectionOnClick
-                        sx={{
-                            '& .MuiDataGrid-row:hover': {
-                                backgroundColor: 'rgba(25, 118, 210, 0.04)',
-                                cursor: 'pointer'
-                            },
-                            '& .MuiDataGrid-cell:focus': {
-                                outline: 'none'
-                            },
-                            '& .MuiDataGrid-row:focus': {
-                                outline: 'none'
-                            }
-                        }}
-                        components={{
-                            NoRowsOverlay: () => (
-                                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-                                    <Typography variant="h6" color="text.secondary">
-                                        No user data available
-                                    </Typography>
-                                </Box>
-                            )
-                        }}
-                    />
-                </Box>
+            {/* Data Grid */}
+            <Paper sx={{ height: 600, width: '100%' }}>
+                <DataGrid
+                    rows={rows}
+                    columns={columns}
+                    initialState={{
+                        pagination: {
+                            paginationModel: { page: 0, pageSize: 10 },
+                        },
+                    }}
+                    pageSizeOptions={[5, 10, 25, 50]}
+                    onRowClick={handleRowClick}
+                    sx={{
+                        '& .MuiDataGrid-row:hover': {
+                            cursor: 'pointer',
+                            backgroundColor: 'action.hover',
+                        },
+                    }}
+                    disableRowSelectionOnClick
+                />
             </Paper>
+
+            {/* Summary Stats */}
+            <Box sx={{ mt: 3, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                <Chip 
+                    icon={<PersonIcon />} 
+                    label={`Total Users: ${fileData.length}`} 
+                    variant="outlined" 
+                />
+                <Chip 
+                    icon={<BarChartIcon />} 
+                    label={`Active Records: ${fileData.filter(f => f.etag).length}`} 
+                    color="success"
+                    variant="outlined" 
+                />
+            </Box>
         </Container>
     );
 };
