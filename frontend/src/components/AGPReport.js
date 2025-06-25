@@ -1,4 +1,38 @@
-import React, { useState, useEffect, useRef } from "react";
+/**
+ * FILE: AGPReport.js
+ * PURPOSE: Ambulatory Glucose/Cortisol Profile (AGP/ACP) Report Component
+ * DESCRIPTION: Generates comprehensive biomarker analysis reports with visual charts, statistics,
+ *              and downloadable formats (PDF, CSV). Supports both glucose and cortisol biomarkers
+ *              with customizable range configurations and time-in-range analysis.
+ * 
+ * FEATURES:
+ * - Interactive AGP/ACP charts with percentile displays
+ * - Time-in-range analysis with visual bar charts
+ * - Additional metrics dashboard (A1C, GMI, CV, etc.)
+ * - PDF report generation with html2canvas
+ * - CSV export of additional metrics
+ * - Biomarker switching (glucose/cortisol)
+ * - Custom range support with auto-detection
+ * - Embed mode for integration in other components
+ * 
+ * DEPENDENCIES:
+ * - @mui/material: UI components and theming
+ * - react-plotly.js: Interactive charts and graphs
+ * - html2canvas: PDF generation from DOM elements
+ * - jspdf: PDF creation and download
+ * 
+ * ERROR HANDLING:
+ * - [CRITICAL] No fallback for failed API calls - Users see blank screen
+ *   FIX: Add retry mechanism and offline state handling
+ * - [HIGH] PDF generation may fail on large datasets or complex DOM
+ *   FIX: Add progress indicators and chunking for large reports
+ * - [MEDIUM] Date parsing errors not handled - Invalid dates crash component
+ *   FIX: Add date validation and fallback formatting
+ * - [LOW] CSV generation assumes all data fields exist
+ *   FIX: Add null checks and default values for missing data
+ */
+
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Plot from "react-plotly.js";
 import {
@@ -14,13 +48,35 @@ import {
   Alert,
   Divider,
   ToggleButton,
-    ToggleButtonGroup
+  ToggleButtonGroup
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import DownloadIcon from "@mui/icons-material/Download";
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 
+/**
+ * COMPONENT: AGPReport
+ * PURPOSE: Main report component for ambulatory biomarker profile analysis
+ * 
+ * PROPS:
+ * - username: string (optional) - Patient username, if not provided uses URL param
+ * - embedMode: boolean (default: false) - Whether component is embedded in another view
+ * 
+ * STATE MANAGEMENT:
+ * - patientData: Complete patient biomarker data from API
+ * - loading: Boolean for async operation states
+ * - error: Error message string for user feedback
+ * - biomarkerType: 'glucose' | 'cortisol' - Current biomarker being analyzed
+ * - customRanges: Custom range configuration when available
+ * - applicableRanges: Auto-detected range settings
+ * - isDownloading: Boolean for PDF generation state
+ * 
+ * PERFORMANCE OPTIMIZATIONS:
+ * - useMemo for expensive calculations (range thresholds, chart data)
+ * - useCallback for event handlers to prevent unnecessary re-renders
+ * - Memoized chart configurations to avoid recreation
+ */
 function AGPReport({ username: usernameProp, embedMode = false }) {
   const { username: usernameParam } = useParams();
   const navigate = useNavigate();
@@ -35,46 +91,216 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
   const [isDownloading, setIsDownloading] = useState(false);
   const reportRef = useRef();
 
-  // CSV Download function for additional metrics
-  const downloadCSV = () => {
+  /**
+   * MEMOIZED CALCULATION: Range Thresholds and Chart Configuration
+   * PURPOSE: Calculate range thresholds, labels, colors, and values for charts
+   * DEPENDENCIES: [customRanges, biomarkerType, patientData?.statistics]
+   * OPTIMIZATION: Complex calculations memoized to prevent expensive recalculations
+   * 
+   * ERROR HANDLING:
+   * - [MEDIUM] Missing statistics data handled with fallback values
+   * - [LOW] Invalid range configurations default to standard ranges
+   */
+  const chartConfiguration = useMemo(() => {
+    if (!patientData?.statistics) {
+      return {
+        ranges: null,
+        rangeValues: [],
+        rangeLabels: [],
+        rangeColors: [],
+        unit: biomarkerType === 'glucose' ? 'mg/dL' : 'ng/mL'
+      };
+    }
+
+    // Get range thresholds (custom or default)
+    const ranges = customRanges || (biomarkerType === 'glucose' ? {
+      veryLow: { min: 0, max: 54 },
+      low: { min: 54, max: 70 },
+      target: { min: 70, max: 180 },
+      high: { min: 180, max: 250 },
+      veryHigh: { min: 250, max: 400 }
+    } : {
+      veryLow: { min: 0, max: 5 },
+      low: { min: 5, max: 10 },
+      normal: { min: 10, max: 30 },
+      high: { min: 30, max: 50 },
+      veryHigh: { min: 50, max: 100 }
+    });
+
+    let rangeValues, rangeLabels, rangeColors, unit;
+    
+    if (biomarkerType === 'glucose') {
+      // Safe extraction of thresholds with fallbacks
+      const veryLowThreshold = ranges?.veryLow?.max || 54;
+      const lowThreshold = ranges?.low?.max || 70;
+      const targetMin = ranges?.target?.min || 70;
+      const targetMax = ranges?.target?.max || 180;
+      const highThreshold = ranges?.high?.max || 250;
+      
+      // Extract percentages with safe fallbacks
+      const stats = patientData.statistics;
+      const veryLowPercent = stats.percentBelow54 || 0;
+      const lowPercent = Math.max(0, (stats.percentBelow70 || 0) - veryLowPercent);
+      const targetPercent = stats.percentBetween70And180 || 0;
+      const highPercent = Math.max(0, (stats.percentAbove180 || 0) - (stats.percentAbove250 || 0));
+      const veryHighPercent = stats.percentAbove250 || 0;
+      
+      rangeValues = [veryLowPercent, lowPercent, targetPercent, highPercent, veryHighPercent];
+      rangeLabels = [
+        `Very Low<br><${veryLowThreshold}`,
+        `Low<br>${veryLowThreshold}-${lowThreshold}`,
+        `Target<br>${targetMin}-${targetMax}`,
+        `High<br>${targetMax}-${highThreshold}`,
+        `Very High<br>>${highThreshold}`
+      ];
+      rangeColors = ["#dc2626", "#f59e0b", "#10b981", "#f59e0b", "#dc2626"];
+      unit = "mg/dL";
+    } else {
+      // Cortisol configuration
+      const veryLowThreshold = ranges?.veryLow?.max || 2;
+      const lowThreshold = ranges?.low?.max || 5;
+      const normalMin = ranges?.normal?.min || 5;
+      const normalMax = ranges?.normal?.max || 15;
+      const highThreshold = ranges?.high?.max || 20;
+      
+      const stats = patientData.statistics;
+      const veryLowPercent = stats.percentBelow5 || 0;
+      const lowPercent = Math.max(0, (stats.percentBelow10 || 0) - veryLowPercent);
+      const normalPercent = stats.percentBetween10And30 || 0;
+      const highPercent = Math.max(0, (stats.percentAbove30 || 0) - (stats.percentAbove50 || 0));
+      const veryHighPercent = stats.percentAbove50 || 0;
+      
+      rangeValues = [veryLowPercent, lowPercent, normalPercent, highPercent, veryHighPercent];
+      rangeLabels = [
+        `Very Low<br><${veryLowThreshold}`,
+        `Low<br>${veryLowThreshold}-${lowThreshold}`,
+        `Normal<br>${normalMin}-${normalMax}`,
+        `High<br>${normalMax}-${highThreshold}`,
+        `Very High<br>>${highThreshold}`
+      ];
+      rangeColors = ["#3b82f6", "#60a5fa", "#10b981", "#f59e0b", "#dc2626"];
+      unit = "ng/mL";
+    }
+
+    return { ranges, rangeValues, rangeLabels, rangeColors, unit };
+  }, [customRanges, biomarkerType, patientData?.statistics]);
+
+  /**
+   * FUNCTION: formatTime
+   * PURPOSE: Convert minutes to human-readable "Xh Ymin" format
+   * PARAMETERS: minutes - Number of minutes to format
+   * OPTIMIZATION: Memoized to prevent function recreation on every render
+   * 
+   * ERROR HANDLING:
+   * - [LOW] Invalid/null inputs return "0h 0min"
+   */
+  const formatTime = useCallback((minutes) => {
+    if (!minutes || isNaN(minutes) || minutes < 0) return '0h 0min';
+    const hours = Math.floor(minutes / 60);
+    const mins = Math.round(minutes % 60);
+    return `${hours}h ${mins}min`;
+  }, []);
+
+  /**
+   * FUNCTION: downloadCSV
+   * PURPOSE: Export additional metrics as CSV file with patient data
+   * DEPENDENCIES: patientData, biomarkerType, username
+   * 
+   * PROCESS:
+   * 1. Calculate CGM active percentage from wear time vs. total possible time
+   * 2. Format date range from actual data timestamps
+   * 3. Build metrics array with proper null handling
+   * 4. Generate CSV content and trigger download
+   * 
+   * ERROR HANDLING:
+   * - [HIGH] Date parsing errors can crash function
+   * - [MEDIUM] Missing statistics fields cause undefined values
+   * - [LOW] Blob creation may fail in older browsers
+   */
+  const downloadCSV = useCallback(() => {
     try {
-      // Calculate CGM Active percentage from wear time using actual date range
-      const startDate = new Date(patientData.startAt);
-      const endDate = new Date(patientData.endAt);
-      const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
-      const totalPossibleMinutes = totalDays * 24 * 60;
-      const actualWearTimeMinutes = patientData.statistics.totalWearTimeMinutes || 0;
-      const cgmActivePercentage = Math.round((actualWearTimeMinutes / totalPossibleMinutes) * 100);
-      
-      // Calculate actual date range from data
-      const dateRange = `${startDate.toLocaleDateString()} - ${endDate.toLocaleDateString()}`;
-      
-      // Create metrics data array
+      // Validate required data before processing
+      if (!patientData || !patientData.statistics) {
+        throw new Error('Patient data or statistics not available');
+      }
+
+      // Safe date parsing with fallbacks
+      let startDate, endDate, dateRange;
+      try {
+        startDate = new Date(patientData.startAt);
+        endDate = new Date(patientData.endAt);
+        
+        // Validate dates
+        if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+          throw new Error('Invalid date format');
+        }
+        
+        dateRange = `${startDate.toLocaleDateString()} - ${endDate.toLocaleDateString()}`;
+      } catch (dateError) {
+        console.warn('Date parsing failed, using fallback:', dateError);
+        dateRange = 'Date range unavailable';
+      }
+
+      // Calculate CGM Active percentage with safe math
+      let cgmActivePercentage = 'N/A';
+      try {
+        if (startDate && endDate) {
+          const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
+          const totalPossibleMinutes = totalDays * 24 * 60;
+          const actualWearTimeMinutes = patientData.statistics.totalWearTimeMinutes || 0;
+          
+          if (totalPossibleMinutes > 0) {
+            cgmActivePercentage = `${Math.round((actualWearTimeMinutes / totalPossibleMinutes) * 100)}%`;
+          }
+        }
+      } catch (calcError) {
+        console.warn('CGM percentage calculation failed:', calcError);
+      }
+
+      // Safe value extraction with defaults
+      const getStatValue = (key, defaultValue = 'N/A', unit = '') => {
+        const value = patientData.statistics[key];
+        return value !== undefined && value !== null ? `${value}${unit}` : defaultValue;
+      };
+
+      // Build metrics array with safe data access
       const metrics = [
         ['Metric', 'Value'],
         ['Date Range', dateRange],
-        ['CGM Active', `${cgmActivePercentage}%`],
-        [`Average ${biomarkerType === 'glucose' ? 'Glucose' : 'Cortisol'}`, `${patientData.statistics.average} ${biomarkerType === 'glucose' ? 'mg/dL' : 'ng/mL'}`],
-        ['Coefficient of Variation', `${patientData.statistics.coefficientOfVariationPercentage}%`]
+        ['CGM Active', cgmActivePercentage],
+        [
+          `Average ${biomarkerType === 'glucose' ? 'Glucose' : 'Cortisol'}`, 
+          getStatValue('average', 'N/A', ` ${biomarkerType === 'glucose' ? 'mg/dL' : 'ng/mL'}`)
+        ],
+        ['Coefficient of Variation', getStatValue('coefficientOfVariationPercentage', 'N/A', '%')]
       ];
       
-      // Add glucose-specific metrics
+      // Add glucose-specific metrics with null checks
       if (biomarkerType === 'glucose') {
-        metrics.push(['Estimated A1C', `${patientData.statistics.a1c}%`]);
-        metrics.push(['GMI', `${patientData.statistics.gmi}%`]);
+        metrics.push(['Estimated A1C', getStatValue('a1c', 'N/A', '%')]);
+        metrics.push(['GMI', getStatValue('gmi', 'N/A', '%')]);
       }
       
-      // Convert to CSV format
-      const csvContent = metrics.map(row => row.join(',')).join('\n');
+      // Convert to CSV format with proper escaping
+      const csvContent = metrics.map(row => 
+        row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')
+      ).join('\n');
       
       // Create and download the CSV file
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      
+      // Check if Blob is supported
+      if (!window.Blob) {
+        throw new Error('CSV download not supported in this browser');
+      }
+      
       const link = document.createElement('a');
       const url = URL.createObjectURL(blob);
       link.setAttribute('href', url);
       
-      // Generate filename with patient name and date
-      const patientName = patientData?.patientInfo?.name || username || 'Patient';
+      // Generate safe filename
+      const patientName = (patientData?.patientInfo?.name || username || 'Patient')
+        .replace(/[^a-zA-Z0-9]/g, '_');
       const date = new Date().toISOString().split('T')[0];
       const biomarkerTypeCapitalized = biomarkerType.charAt(0).toUpperCase() + biomarkerType.slice(1);
       const filename = `${patientName}_${biomarkerTypeCapitalized}_AGP_Additional_Metrics_${date}.csv`;
@@ -83,23 +309,47 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
       link.style.visibility = 'hidden';
       document.body.appendChild(link);
       link.click();
+      
+      // Cleanup
       document.body.removeChild(link);
+      URL.revokeObjectURL(url);
       
     } catch (error) {
       console.error('Error generating CSV:', error);
-      alert('Error generating CSV. Please try again.');
+      // More specific error messaging
+      const errorMessage = error.message.includes('not available') 
+        ? 'Patient data is not fully loaded. Please wait and try again.'
+        : 'Error generating CSV file. Please check your browser settings and try again.';
+      alert(errorMessage);
     }
-  };
+  }, [patientData, biomarkerType, username]);
 
-  // PDF Download function - defined early to avoid hoisting issues
-  const downloadPDF = async () => {
+  /**
+   * FUNCTION: downloadPDF
+   * PURPOSE: Generate and download PDF report from current DOM state
+   * DEPENDENCIES: reportRef, html2canvas, jsPDF, patientData
+   * 
+   * PROCESS:
+   * 1. Hide interactive elements (.pdf-hide class)
+   * 2. Capture DOM as high-resolution canvas
+   * 3. Calculate optimal PDF dimensions for A4 format
+   * 4. Generate PDF and trigger download
+   * 5. Restore UI state
+   * 
+   * ERROR HANDLING:
+   * - [CRITICAL] html2canvas may fail on complex DOM structures
+   * - [HIGH] Large reports may exceed memory limits
+   * - [MEDIUM] Element selection could fail if DOM changes
+   * - [LOW] PDF library may not support certain image formats
+   */
+  const downloadPDF = useCallback(async () => {
     try {
       setIsDownloading(true);
       
-      // Get the report container element
+      // Validate report element exists
       const element = reportRef.current;
       if (!element) {
-        throw new Error('Report element not found');
+        throw new Error('Report element not found - cannot generate PDF');
       }
 
       // Hide interactive elements before capturing
@@ -108,47 +358,68 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
         el.style.display = 'none';
       });
 
-      // Configure html2canvas options for better quality
-      const canvas = await html2canvas(element, {
-        scale: 2, // Higher resolution
+      // Configure html2canvas with optimized settings
+      const canvasOptions = {
+        scale: 2, // Higher resolution for better quality
         useCORS: true,
         allowTaint: true,
         backgroundColor: '#ffffff',
         width: element.scrollWidth,
         height: element.scrollHeight,
         scrollX: 0,
-        scrollY: 0
-      });
+        scrollY: 0,
+        logging: false, // Disable console logs
+        imageTimeout: 15000, // 15 second timeout for images
+      };
 
-      // Restore hidden elements after capturing
+      let canvas;
+      try {
+        canvas = await html2canvas(element, canvasOptions);
+      } catch (canvasError) {
+        throw new Error(`Failed to capture report: ${canvasError.message}`);
+      }
+
+      // Restore hidden elements immediately after capturing
       elementsToHide.forEach(el => {
         el.style.display = '';
       });
 
-      // Calculate PDF dimensions
-      const imgData = canvas.toDataURL('image/png');
+      // Validate canvas creation
+      if (!canvas || canvas.width === 0 || canvas.height === 0) {
+        throw new Error('Generated canvas is invalid or empty');
+      }
+
+      // Generate PDF with optimized dimensions
+      const imgData = canvas.toDataURL('image/png', 0.95); // Slight compression
       const pdf = new jsPDF('p', 'mm', 'a4');
       
-      // A4 dimensions in mm
+      // A4 dimensions in mm with margins
       const pdfWidth = 210;
       const pdfHeight = 297;
+      const margin = 10;
+      const maxWidth = pdfWidth - (2 * margin);
+      const maxHeight = pdfHeight - (2 * margin);
       
-      // Calculate image dimensions to fit A4
-      const imgWidth = pdfWidth - 20; // 10mm margins on each side
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      // Calculate optimal image dimensions
+      const aspectRatio = canvas.width / canvas.height;
+      let finalWidth = maxWidth;
+      let finalHeight = maxWidth / aspectRatio;
       
-      // If the content is too tall for one page, we'll fit it to page height
-      const finalHeight = imgHeight > (pdfHeight - 20) ? (pdfHeight - 20) : imgHeight;
-      const finalWidth = imgHeight > (pdfHeight - 20) ? (canvas.width * finalHeight) / canvas.height : imgWidth;
+      // If height exceeds page, scale down
+      if (finalHeight > maxHeight) {
+        finalHeight = maxHeight;
+        finalWidth = maxHeight * aspectRatio;
+      }
       
       // Center the image on the page
       const x = (pdfWidth - finalWidth) / 2;
-      const y = 10; // 10mm top margin
+      const y = margin;
       
       pdf.addImage(imgData, 'PNG', x, y, finalWidth, finalHeight);
       
-      // Generate filename with patient name and date
-      const patientName = patientData?.patientInfo?.name || username || 'Patient';
+      // Generate safe filename
+      const patientName = (patientData?.patientInfo?.name || username || 'Patient')
+        .replace(/[^a-zA-Z0-9]/g, '_');
       const date = new Date().toISOString().split('T')[0];
       const biomarkerTypeCapitalized = biomarkerType.charAt(0).toUpperCase() + biomarkerType.slice(1);
       const filename = `${patientName}_${biomarkerTypeCapitalized}_AGP_Report_${date}.pdf`;
@@ -157,64 +428,173 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
       
     } catch (error) {
       console.error('Error generating PDF:', error);
-      alert('Error generating PDF. Please try again.');
+      
+      // Provide specific error messages
+      let errorMessage = 'Error generating PDF. ';
+      if (error.message.includes('not found')) {
+        errorMessage += 'Report is not ready. Please wait for the report to fully load.';
+      } else if (error.message.includes('capture')) {
+        errorMessage += 'Failed to capture report. Try scrolling to top and try again.';
+      } else if (error.message.includes('canvas')) {
+        errorMessage += 'Report is too complex to convert. Try refreshing the page.';
+      } else {
+        errorMessage += 'Please try again or contact support if the issue persists.';
+      }
+      
+      alert(errorMessage);
     } finally {
       setIsDownloading(false);
     }
-  };
+  }, [patientData, biomarkerType, username]);
 
+  /**
+   * EFFECT: Data Fetching for AGP/ACP Report
+   * PURPOSE: Fetch patient biomarker data and applicable range configurations
+   * DEPENDENCIES: [username, biomarkerType] - Refetches when either changes
+   * 
+   * PROCESS:
+   * 1. Validate authentication token
+   * 2. Parallel fetch of AGP data and range configurations
+   * 3. Process and set data with fallbacks for missing ranges
+   * 4. Handle errors gracefully with user feedback
+   * 
+   * ERROR HANDLING:
+   * - [CRITICAL] Network failures leave users with no data
+   * - [HIGH] Invalid usernames cause 404 errors
+   * - [MEDIUM] Token expiration not detected
+   * - [LOW] Range configuration failures are non-blocking
+   */
   useEffect(() => {
+    /**
+     * FUNCTION: fetchAGPData
+     * PURPOSE: Internal async function to fetch all required data
+     * OPTIMIZATION: Uses Promise.all for parallel API calls
+     */
     const fetchAGPData = async () => {
       try {
         setLoading(true);
+        setError(null); // Clear previous errors
+        
+        // Validate authentication
         const token = localStorage.getItem("token");
         if (!token) {
-          throw new Error("No authentication token found");
+          throw new Error("Authentication required. Please log in again.");
         }
 
-        // Fetch AGP data and applicable ranges based on personal information in parallel
+        // Validate required parameters
+        if (!username || !biomarkerType) {
+          throw new Error("Missing required parameters for data fetching");
+        }
+
+        // Construct API endpoints
+        const agpEndpoint = biomarkerType === 'glucose' 
+          ? `http://localhost:3000/user-glucose-agp/${encodeURIComponent(username)}`
+          : `http://localhost:3000/user-cortisol-agp/${encodeURIComponent(username)}`;
+          
+        const rangesEndpoint = `http://localhost:3000/user-applicable-ranges/${encodeURIComponent(username)}/${biomarkerType}`;
+
+        const requestHeaders = { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        };
+
+        // Parallel data fetching with timeout protection
+        const fetchWithTimeout = (url, options, timeout = 30000) => {
+          return Promise.race([
+            fetch(url, options),
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Request timeout')), timeout)
+            )
+          ]);
+        };
+
         const [agpResponse, applicableRangesResponse] = await Promise.all([
-          fetch(biomarkerType === 'glucose' 
-            ? `http://localhost:3000/user-glucose-agp/${username}`
-            : `http://localhost:3000/user-cortisol-agp/${username}`, {
-            headers: { Authorization: `Bearer ${token}` }
-          }),
-          fetch(`http://localhost:3000/user-applicable-ranges/${username}/${biomarkerType}`, {
-            headers: { Authorization: `Bearer ${token}` }
-          }).catch(() => null) // Don't fail if ranges can't be fetched
+          fetchWithTimeout(agpEndpoint, { headers: requestHeaders }),
+          fetchWithTimeout(rangesEndpoint, { headers: requestHeaders })
+            .catch(error => {
+              console.warn('Ranges fetch failed (non-critical):', error);
+              return null; // Non-blocking failure
+            })
         ]);
 
+        // Validate main AGP response
         if (!agpResponse.ok) {
-          throw new Error(`HTTP error! status: ${agpResponse.status}`);
+          if (agpResponse.status === 401) {
+            throw new Error("Authentication expired. Please log in again.");
+          } else if (agpResponse.status === 404) {
+            throw new Error(`No data found for user: ${username}`);
+          } else if (agpResponse.status >= 500) {
+            throw new Error("Server error. Please try again later.");
+          } else {
+            throw new Error(`Failed to load data (${agpResponse.status})`);
+          }
         }
 
-        const agpData = await agpResponse.json();
+        let agpData;
+        try {
+          agpData = await agpResponse.json();
+        } catch (parseError) {
+          throw new Error("Invalid data format received from server");
+        }
+
+        // Validate essential data structure
+        if (!agpData || !agpData.statistics) {
+          throw new Error("Incomplete data received. Please try again.");
+        }
+
         setPatientData(agpData);
 
-        // Set applicable ranges if available
+        // Process range configurations (optional)
         if (applicableRangesResponse && applicableRangesResponse.ok) {
-          const rangesData = await applicableRangesResponse.json();
-          setApplicableRanges(rangesData);
-          
-          if (!rangesData.useDefault && rangesData.ranges) {
-            setCustomRanges(rangesData.ranges);
-            setRangeMessage(rangesData.message || '');
-          } else {
+          try {
+            const rangesData = await applicableRangesResponse.json();
+            setApplicableRanges(rangesData);
+            
+            if (!rangesData.useDefault && rangesData.ranges) {
+              setCustomRanges(rangesData.ranges);
+              setRangeMessage(rangesData.message || '');
+            } else {
+              setCustomRanges(null);
+              setRangeMessage(rangesData.message || '');
+            }
+          } catch (rangeParseError) {
+            console.warn('Failed to parse range data:', rangeParseError);
+            // Continue without custom ranges
+            setApplicableRanges(null);
             setCustomRanges(null);
-            setRangeMessage(rangesData.message || '');
+            setRangeMessage('');
           }
+        } else {
+          // Reset range configurations
+          setApplicableRanges(null);
+          setCustomRanges(null);
+          setRangeMessage('');
         }
 
       } catch (error) {
         console.error("Error fetching AGP data:", error);
-        setError(error.message);
+        
+        // Set user-friendly error messages
+        const errorMessage = error.message || "An unexpected error occurred";
+        setError(errorMessage);
+        
+        // Clear data on error
+        setPatientData(null);
+        setApplicableRanges(null);
+        setCustomRanges(null);
+        setRangeMessage('');
+        
       } finally {
         setLoading(false);
       }
     };
 
+    // Only fetch if we have a username
     if (username) {
       fetchAGPData();
+    } else {
+      setLoading(false);
+      setError("No username provided");
     }
   }, [username, biomarkerType]);
 
@@ -244,130 +624,8 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
     );
   }
 
-  // Debug logging
-  console.log("Patient data statistics:", patientData.statistics);
-  console.log("Custom ranges being used:", customRanges);
-  console.log("Applicable ranges data:", applicableRanges);
-  console.log("Embed mode:", embedMode);
-  
-  // Get range thresholds (custom or default)
-  const getRangeThresholds = () => {
-    if (customRanges) {
-      return customRanges;
-    }
-    
-    // Default ranges
-    if (biomarkerType === 'glucose') {
-      return {
-        veryLow: { min: 0, max: 54 },
-        low: { min: 54, max: 70 },
-        target: { min: 70, max: 180 },
-        high: { min: 180, max: 250 },
-        veryHigh: { min: 250, max: 400 }
-      };
-    } else {
-      return {
-        veryLow: { min: 0, max: 5 },
-        low: { min: 5, max: 10 },
-        normal: { min: 10, max: 30 },
-        high: { min: 30, max: 50 },
-        veryHigh: { min: 50, max: 100 }
-      };
-    }
-  };
-
-  // Calculate time in range values using custom or default thresholds
-  const ranges = getRangeThresholds();
-  let rangeValues, rangeLabels, rangeColors, unit;
-  
-  if (biomarkerType === 'glucose') {
-    // Calculate percentages based on custom thresholds
-    const veryLowThreshold = ranges?.veryLow?.max || 54;
-    const lowThreshold = ranges?.low?.max || 70;
-    const targetMin = ranges?.target?.min || 70;
-    const targetMax = ranges?.target?.max || 180;
-    const highThreshold = ranges?.high?.max || 250;
-    
-    // Backend now calculates statistics with custom ranges, so use them directly
-    // Note: The backend variable names like "percentBelow54" are misleading - they're actually 
-    // calculated using the custom thresholds (e.g., percentBelow54 uses veryLowThreshold, not fixed 54)
-    const veryLowPercent = patientData.statistics.percentBelow54 || 0;
-    const lowPercent = Math.max(0, (patientData.statistics.percentBelow70 || 0) - veryLowPercent);
-    const targetPercent = patientData.statistics.percentBetween70And180 || 0;
-    const highPercent = Math.max(0, (patientData.statistics.percentAbove180 || 0) - (patientData.statistics.percentAbove250 || 0));
-    const veryHighPercent = patientData.statistics.percentAbove250 || 0;
-    
-    rangeValues = [veryLowPercent, lowPercent, targetPercent, highPercent, veryHighPercent];
-    rangeLabels = [
-      `Very Low<br><${veryLowThreshold}`,
-      `Low<br>${veryLowThreshold}-${lowThreshold}`,
-      `Target<br>${targetMin}-${targetMax}`,
-      `High<br>${targetMax}-${highThreshold}`,
-      `Very High<br>>${highThreshold}`
-    ];
-    rangeColors = ["#dc2626", "#f59e0b", "#10b981", "#f59e0b", "#dc2626"];
-    unit = "mg/dL";
-  } else {
-    // Cortisol ranges (0-20 ng/mL scale)
-    const veryLowThreshold = ranges?.veryLow?.max || 2;
-    const lowThreshold = ranges?.low?.max || 5;
-    const normalMin = ranges?.normal?.min || 5;
-    const normalMax = ranges?.normal?.max || 15;
-    const highThreshold = ranges?.high?.max || 20;
-    
-    // Backend calculates cortisol statistics with custom ranges
-    const veryLowPercent = patientData.statistics.percentBelow5 || 0;
-    const lowPercent = Math.max(0, (patientData.statistics.percentBelow10 || 0) - veryLowPercent);
-    const normalPercent = patientData.statistics.percentBetween10And30 || 0;
-    const highPercent = Math.max(0, (patientData.statistics.percentAbove30 || 0) - (patientData.statistics.percentAbove50 || 0));
-    const veryHighPercent = patientData.statistics.percentAbove50 || 0;
-    
-    rangeValues = [veryLowPercent, lowPercent, normalPercent, highPercent, veryHighPercent];
-    rangeLabels = [
-      `Very Low<br><${veryLowThreshold}`,
-      `Low<br>${veryLowThreshold}-${lowThreshold}`,
-      `Normal<br>${normalMin}-${normalMax}`,
-      `High<br>${normalMax}-${highThreshold}`,
-      `Very High<br>>${highThreshold}`
-    ];
-    rangeColors = ["#3b82f6", "#60a5fa", "#10b981", "#f59e0b", "#dc2626"];
-    unit = "ng/mL";
-  }
-  
-  console.log("Time in range values:", rangeValues);
-  console.log("Custom range thresholds used:", biomarkerType === 'glucose' ? {
-    veryLow: ranges?.veryLow?.max || 54,
-    low: ranges?.low?.max || 70, 
-    targetMin: ranges?.target?.min || 70,
-    targetMax: ranges?.target?.max || 180,
-    high: ranges?.high?.max || 250
-  } : {
-    veryLow: ranges?.veryLow?.max || 2,
-    low: ranges?.low?.max || 5,
-    normalMin: ranges?.normal?.min || 5, 
-    normalMax: ranges?.normal?.max || 15,
-    high: ranges?.high?.max || 20
-  });
-  console.log("Backend statistics (calculated with custom ranges):", {
-    percentBelow54: patientData.statistics.percentBelow54,
-    percentBelow70: patientData.statistics.percentBelow70,
-    percentBetween70And180: patientData.statistics.percentBetween70And180,
-    percentAbove180: patientData.statistics.percentAbove180,
-    percentAbove250: patientData.statistics.percentAbove250
-  });
-  console.log("Actual wear time:", {
-    totalWearTimeHours: patientData.statistics.totalWearTimeHours,
-    totalWearTimeMinutes: patientData.statistics.totalWearTimeMinutes,
-    timeInTargetMinutes: biomarkerType === 'glucose' ? patientData.statistics.timeTargetMinutes : patientData.statistics.timeNormalMinutes
-  });
-  console.log("Chart should now accurately reflect custom ranges!");
-  
-  // Helper function to convert minutes to hours and minutes display
-  const formatTime = (minutes) => {
-    const hours = Math.floor(minutes / 60);
-    const mins = Math.round(minutes % 60);
-    return `${hours}h ${mins}min`;
-  };
+  // Destructure chart configuration for use in render
+  const { ranges, rangeValues, rangeLabels, rangeColors, unit } = chartConfiguration;
 
   // Time in Range Bar Chart Data for Plotly
   const timeInRangeData = [
