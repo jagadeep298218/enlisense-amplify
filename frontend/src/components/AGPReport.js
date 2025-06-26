@@ -91,6 +91,7 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
   const [isDownloading, setIsDownloading] = useState(false);
   const [isPaidUser, setIsPaidUser] = useState(false);
   const [paidStatusChecked, setPaidStatusChecked] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const reportRef = useRef();
 
   /**
@@ -114,20 +115,29 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
       };
     }
 
-    // Get range thresholds (custom or default)
-    const ranges = customRanges || (biomarkerType === 'glucose' ? {
-      veryLow: { min: 0, max: 54 },
-      low: { min: 54, max: 70 },
-      target: { min: 70, max: 180 },
-      high: { min: 180, max: 250 },
-      veryHigh: { min: 250, max: 400 }
-    } : {
-      veryLow: { min: 0, max: 5 },
-      low: { min: 5, max: 10 },
-      normal: { min: 10, max: 30 },
-      high: { min: 30, max: 50 },
-      veryHigh: { min: 50, max: 100 }
-    });
+    // Get range thresholds from database or fallback to defaults
+    let ranges;
+    if (customRanges && Object.keys(customRanges).length > 0) {
+      // Use ranges from s3-mongodb-csv2ranges collection
+      ranges = customRanges;
+      console.log('Using database ranges for', biomarkerType, ':', ranges);
+    } else {
+      // Fallback to hardcoded defaults only if no database ranges are available
+      ranges = biomarkerType === 'glucose' ? {
+        veryLow: { min: 0, max: 54 },
+        low: { min: 54, max: 70 },
+        target: { min: 70, max: 180 },
+        high: { min: 180, max: 250 },
+        veryHigh: { min: 250, max: 400 }
+      } : {
+        veryLow: { min: 0, max: 5 },
+        low: { min: 5, max: 10 },
+        normal: { min: 10, max: 30 },
+        high: { min: 30, max: 50 },
+        veryHigh: { min: 50, max: 100 }
+      };
+      console.log('Using fallback ranges - no database ranges available:', ranges);
+    }
 
     let rangeValues, rangeLabels, rangeColors, unit;
     
@@ -204,18 +214,40 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
   }, []);
 
   /**
-   * FUNCTION: checkPaidStatus
-   * PURPOSE: Check if current user has paid access for downloads
+   * FUNCTION: checkUserPermissions
+   * PURPOSE: Check if current user has access for downloads (paid user or admin)
    * DEPENDENCIES: username
    */
-  const checkPaidStatus = useCallback(async () => {
+  const checkUserPermissions = useCallback(async () => {
     try {
       const token = localStorage.getItem("token");
       if (!token) {
-        console.log('No token found for paid status check');
-        return false;
+        console.log('No token found for permission check');
+        return { canDownload: false, isAdmin: false, isPaidUser: false };
       }
 
+      // Check user info from stored user data
+      const storedUser = localStorage.getItem('user');
+      let userIsAdmin = false;
+      if (storedUser) {
+        try {
+          const userData = JSON.parse(storedUser);
+          userIsAdmin = userData.admin || false;
+          setIsAdmin(userIsAdmin);
+        } catch (e) {
+          console.warn('Failed to parse stored user data');
+        }
+      }
+
+      // If admin, they can always download
+      if (userIsAdmin) {
+        console.log('User is admin - allowing download');
+        setIsPaidUser(true); // Set to true for UI consistency
+        setPaidStatusChecked(true);
+        return { canDownload: true, isAdmin: true, isPaidUser: true };
+      }
+
+      // If not admin, check paid status
       console.log('Checking paid status...');
       const response = await fetch(`${config.API_URL}/user/paid-status`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -225,18 +257,22 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
       if (response.ok) {
         const data = await response.json();
         console.log('Paid status data:', data);
-        setIsPaidUser(data.paid_user || false);
+        const isPaid = data.paid_user || false;
+        setIsPaidUser(isPaid);
         setPaidStatusChecked(true);
-        return data.paid_user || false;
+        return { canDownload: isPaid, isAdmin: false, isPaidUser: isPaid };
       } else {
         console.log('Paid status check failed:', response.status, response.statusText);
       }
-      return false;
+      
+      setPaidStatusChecked(true);
+      return { canDownload: false, isAdmin: false, isPaidUser: false };
     } catch (error) {
-      console.error('Error checking paid status:', error);
+      console.error('Error checking user permissions:', error);
       setIsPaidUser(false);
       setPaidStatusChecked(true);
-      return false;
+      setIsAdmin(false);
+      return { canDownload: false, isAdmin: false, isPaidUser: false };
     }
   }, []);
 
@@ -258,11 +294,14 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
    * - [LOW] Blob creation may fail in older browsers
    */
   const downloadCSV = useCallback(async () => {
-    // Check paid status before allowing download
-    if (!isPaidUser) {
-      const currentPaidStatus = await checkPaidStatus();
-      if (!currentPaidStatus) {
-        alert('CSV download is a premium feature. Please contact your administrator to upgrade to a paid account.');
+    // Check user permissions before allowing download
+    if (!isPaidUser && !isAdmin) {
+      const permissions = await checkUserPermissions();
+      if (!permissions.canDownload) {
+        const message = permissions.isAdmin ? 
+          'Download failed. Please try again.' : 
+          'CSV download is a premium feature. Please contact your administrator to upgrade to a paid account.';
+        alert(message);
         return;
       }
     }
@@ -370,7 +409,7 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
         : 'Error generating CSV file. Please check your browser settings and try again.';
       alert(errorMessage);
     }
-  }, [patientData, biomarkerType, username, isPaidUser, checkPaidStatus]);
+  }, [patientData, biomarkerType, username, isPaidUser, isAdmin, checkUserPermissions]);
 
   /**
    * FUNCTION: downloadPDF
@@ -392,11 +431,14 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
    * - [LOW] PDF library may not support certain image formats
    */
   const downloadPDF = useCallback(async () => {
-    // Check paid status before allowing download
-    if (!isPaidUser) {
-      const currentPaidStatus = await checkPaidStatus();
-      if (!currentPaidStatus) {
-        alert('PDF download is a premium feature. Please contact your administrator to upgrade to a paid account.');
+    // Check user permissions before allowing download
+    if (!isPaidUser && !isAdmin) {
+      const permissions = await checkUserPermissions();
+      if (!permissions.canDownload) {
+        const message = permissions.isAdmin ? 
+          'Download failed. Please try again.' : 
+          'PDF download is a premium feature. Please contact your administrator to upgrade to a paid account.';
+        alert(message);
         return;
       }
     }
@@ -502,7 +544,7 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
     } finally {
       setIsDownloading(false);
     }
-  }, [patientData, biomarkerType, username, isPaidUser, checkPaidStatus]);
+  }, [patientData, biomarkerType, username, isPaidUser, isAdmin, checkUserPermissions]);
 
   /**
    * EFFECT: Data Fetching for AGP/ACP Report
@@ -649,13 +691,13 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
     // Only fetch if we have a username
     if (username) {
       fetchAGPData();
-      // Check paid status in parallel
-      checkPaidStatus();
+      // Check user permissions in parallel
+      checkUserPermissions();
     } else {
       setLoading(false);
       setError("No username provided");
     }
-  }, [username, biomarkerType, checkPaidStatus]);
+  }, [username, biomarkerType, checkUserPermissions]);
 
   if (loading) {
     return (
@@ -810,20 +852,20 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
               disabled={isDownloading}
               variant="outlined"
               color="primary"
-              title={!isPaidUser && paidStatusChecked ? 'PDF download requires paid access' : ''}
+              title={!isPaidUser && !isAdmin && paidStatusChecked ? 'PDF download requires paid access' : ''}
             >
               {isDownloading ? 'Generating PDF...' : 'Download PDF'}
-              {!isPaidUser && paidStatusChecked && <span style={{ marginLeft: '4px', fontSize: '0.8em' }}>🔒</span>}
+              {!isPaidUser && !isAdmin && paidStatusChecked && <span style={{ marginLeft: '4px', fontSize: '0.8em' }}>🔒</span>}
             </Button>
             <Button
               startIcon={<DownloadIcon />}
               onClick={downloadCSV}
               variant="outlined"
               color="secondary"
-              title={!isPaidUser && paidStatusChecked ? 'CSV download requires paid access' : ''}
+              title={!isPaidUser && !isAdmin && paidStatusChecked ? 'CSV download requires paid access' : ''}
             >
               Download CSV
-              {!isPaidUser && paidStatusChecked && <span style={{ marginLeft: '4px', fontSize: '0.8em' }}>🔒</span>}
+              {!isPaidUser && !isAdmin && paidStatusChecked && <span style={{ marginLeft: '4px', fontSize: '0.8em' }}>🔒</span>}
             </Button>
           </Box>
           
@@ -919,10 +961,10 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
             variant="outlined"
             color="primary"
             size="small"
-            title={!isPaidUser && paidStatusChecked ? 'PDF download requires paid access' : ''}
+            title={!isPaidUser && !isAdmin && paidStatusChecked ? 'PDF download requires paid access' : ''}
           >
             {isDownloading ? 'Generating PDF...' : 'Download PDF'}
-            {!isPaidUser && paidStatusChecked && <span style={{ marginLeft: '4px', fontSize: '0.8em' }}>🔒</span>}
+            {!isPaidUser && !isAdmin && paidStatusChecked && <span style={{ marginLeft: '4px', fontSize: '0.8em' }}>🔒</span>}
           </Button>
           
           {/* Download CSV Button for embed mode */}
@@ -932,10 +974,10 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
             variant="outlined"
             color="secondary"
             size="small"
-            title={!isPaidUser && paidStatusChecked ? 'CSV download requires paid access' : ''}
+            title={!isPaidUser && !isAdmin && paidStatusChecked ? 'CSV download requires paid access' : ''}
           >
             Download CSV
-            {!isPaidUser && paidStatusChecked && <span style={{ marginLeft: '4px', fontSize: '0.8em' }}>🔒</span>}
+            {!isPaidUser && !isAdmin && paidStatusChecked && <span style={{ marginLeft: '4px', fontSize: '0.8em' }}>🔒</span>}
           </Button>
           
           {/* Auto-detected conditions display for embed mode */}
@@ -1035,7 +1077,7 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                   <Box sx={{ width: 24, height: 24, backgroundColor: rangeColors[4], borderRadius: 0.5 }}></Box>
                   <Typography variant="body2" sx={{ fontWeight: 'bold', fontSize: '15px', lineHeight: 1.3 }}>
-                    Very High <span style={{color: '#666', fontWeight: 'normal'}}>(&gt;250 mg/dL)</span>
+                    Very High <span style={{color: '#666', fontWeight: 'normal'}}>(&gt;{chartConfiguration.ranges?.high?.max || 250} mg/dL)</span>
                     <br />
                     <span style={{color: '#666', fontWeight: 'normal', fontSize: '14px'}}>
                       {rangeValues[4]}% ({formatTime((patientData.statistics.timeVeryHighMinutes || 0))})
@@ -1046,7 +1088,7 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                   <Box sx={{ width: 24, height: 24, backgroundColor: rangeColors[3], borderRadius: 0.5 }}></Box>
                   <Typography variant="body2" sx={{ fontWeight: 'bold', fontSize: '15px', lineHeight: 1.3 }}>
-                    High <span style={{color: '#666', fontWeight: 'normal'}}>(181-250 mg/dL)</span>
+                    High <span style={{color: '#666', fontWeight: 'normal'}}>({(chartConfiguration.ranges?.target?.max || 180) + 1}-{chartConfiguration.ranges?.high?.max || 250} mg/dL)</span>
                     <br />
                     <span style={{color: '#666', fontWeight: 'normal', fontSize: '14px'}}>
                       {rangeValues[3]}% ({formatTime((patientData.statistics.timeHighMinutes || 0))})
@@ -1057,7 +1099,7 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                   <Box sx={{ width: 24, height: 24, backgroundColor: rangeColors[2], borderRadius: 0.5 }}></Box>
                   <Typography variant="body2" sx={{ fontWeight: 'bold', fontSize: '15px', lineHeight: 1.3 }}>
-                    Target Range <span style={{color: '#666', fontWeight: 'normal'}}>(70-180 mg/dL)</span>
+                    Target Range <span style={{color: '#666', fontWeight: 'normal'}}>({chartConfiguration.ranges?.target?.min || 70}-{chartConfiguration.ranges?.target?.max || 180} mg/dL)</span>
                     <br />
                     <span style={{color: '#666', fontWeight: 'normal', fontSize: '14px'}}>
                       {rangeValues[2]}% ({formatTime((patientData.statistics.timeTargetMinutes || 0))})
@@ -1068,7 +1110,7 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                   <Box sx={{ width: 24, height: 24, backgroundColor: rangeColors[1], borderRadius: 0.5 }}></Box>
                   <Typography variant="body2" sx={{ fontWeight: 'bold', fontSize: '15px', lineHeight: 1.3 }}>
-                    Low <span style={{color: '#666', fontWeight: 'normal'}}>(54-69 mg/dL)</span>
+                    Low <span style={{color: '#666', fontWeight: 'normal'}}>({chartConfiguration.ranges?.veryLow?.max || 54}-{(chartConfiguration.ranges?.target?.min || 70) - 1} mg/dL)</span>
                     <br />
                     <span style={{color: '#666', fontWeight: 'normal', fontSize: '14px'}}>
                       {rangeValues[1]}% ({formatTime((patientData.statistics.timeLowMinutes || 0))})
@@ -1079,7 +1121,7 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                   <Box sx={{ width: 24, height: 24, backgroundColor: rangeColors[0], borderRadius: 0.5 }}></Box>
                   <Typography variant="body2" sx={{ fontWeight: 'bold', fontSize: '15px', lineHeight: 1.3 }}>
-                    Very Low <span style={{color: '#666', fontWeight: 'normal'}}>(&lt;54 mg/dL)</span>
+                    Very Low <span style={{color: '#666', fontWeight: 'normal'}}>(&lt;{chartConfiguration.ranges?.veryLow?.max || 54} mg/dL)</span>
                     <br />
                     <span style={{color: '#666', fontWeight: 'normal', fontSize: '14px'}}>
                       {rangeValues[0]}% ({formatTime((patientData.statistics.timeVeryLowMinutes || 0))})
@@ -1093,7 +1135,7 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                   <Box sx={{ width: 24, height: 24, backgroundColor: rangeColors[4], borderRadius: 0.5 }}></Box>
                   <Typography variant="body2" sx={{ fontWeight: 'bold', fontSize: '15px', lineHeight: 1.3 }}>
-                    Very High <span style={{color: '#666', fontWeight: 'normal'}}>(&gt;20 ng/mL)</span>
+                    Very High <span style={{color: '#666', fontWeight: 'normal'}}>(&gt;{chartConfiguration.ranges?.high?.max || 50} ng/mL)</span>
                     <br />
                     <span style={{color: '#666', fontWeight: 'normal', fontSize: '14px'}}>
                       {rangeValues[4]}% ({formatTime((patientData.statistics.timeVeryHighMinutes || 0))})
@@ -1104,7 +1146,7 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                   <Box sx={{ width: 24, height: 24, backgroundColor: rangeColors[3], borderRadius: 0.5 }}></Box>
                   <Typography variant="body2" sx={{ fontWeight: 'bold', fontSize: '15px', lineHeight: 1.3 }}>
-                    High <span style={{color: '#666', fontWeight: 'normal'}}>(15-20 ng/mL)</span>
+                    High <span style={{color: '#666', fontWeight: 'normal'}}>({(chartConfiguration.ranges?.normal?.max || 30) + 1}-{chartConfiguration.ranges?.high?.max || 50} ng/mL)</span>
                     <br />
                     <span style={{color: '#666', fontWeight: 'normal', fontSize: '14px'}}>
                       {rangeValues[3]}% ({formatTime((patientData.statistics.timeHighMinutes || 0))})
@@ -1115,7 +1157,7 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                   <Box sx={{ width: 24, height: 24, backgroundColor: rangeColors[2], borderRadius: 0.5 }}></Box>
                   <Typography variant="body2" sx={{ fontWeight: 'bold', fontSize: '15px', lineHeight: 1.3 }}>
-                    Normal Range <span style={{color: '#666', fontWeight: 'normal'}}>(5-15 ng/mL)</span>
+                    Normal Range <span style={{color: '#666', fontWeight: 'normal'}}>({chartConfiguration.ranges?.normal?.min || 10}-{chartConfiguration.ranges?.normal?.max || 30} ng/mL)</span>
                     <br />
                     <span style={{color: '#666', fontWeight: 'normal', fontSize: '14px'}}>
                       {rangeValues[2]}% ({formatTime((patientData.statistics.timeNormalMinutes || 0))})
@@ -1126,7 +1168,7 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                   <Box sx={{ width: 24, height: 24, backgroundColor: rangeColors[1], borderRadius: 0.5 }}></Box>
                   <Typography variant="body2" sx={{ fontWeight: 'bold', fontSize: '15px', lineHeight: 1.3 }}>
-                    Low <span style={{color: '#666', fontWeight: 'normal'}}>(2-5 ng/mL)</span>
+                    Low <span style={{color: '#666', fontWeight: 'normal'}}>({chartConfiguration.ranges?.veryLow?.max || 5}-{(chartConfiguration.ranges?.normal?.min || 10) - 1} ng/mL)</span>
                     <br />
                     <span style={{color: '#666', fontWeight: 'normal', fontSize: '14px'}}>
                       {rangeValues[1]}% ({formatTime((patientData.statistics.timeLowMinutes || 0))})
@@ -1137,7 +1179,7 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                   <Box sx={{ width: 24, height: 24, backgroundColor: rangeColors[0], borderRadius: 0.5 }}></Box>
                   <Typography variant="body2" sx={{ fontWeight: 'bold', fontSize: '15px', lineHeight: 1.3 }}>
-                    Very Low <span style={{color: '#666', fontWeight: 'normal'}}>(&lt;2 ng/mL)</span>
+                    Very Low <span style={{color: '#666', fontWeight: 'normal'}}>(&lt;{chartConfiguration.ranges?.veryLow?.max || 5} ng/mL)</span>
                     <br />
                     <span style={{color: '#666', fontWeight: 'normal', fontSize: '14px'}}>
                       {rangeValues[0]}% ({formatTime((patientData.statistics.timeVeryLowMinutes || 0))})
@@ -1184,7 +1226,7 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
             {/* Target Range Row */}
             <Box sx={{ display: 'flex', py: 1, alignItems: 'center', width: '90%' }}>
               <Typography variant="body2" sx={{ flex: 2 }}>
-                Target Range 70–180 mg/dL
+                Target Range {chartConfiguration.ranges?.target?.min || 70}–{chartConfiguration.ranges?.target?.max || 180} mg/dL
               </Typography>
               <Typography variant="body2" sx={{ flex: 1.5, textAlign: 'center' }}>
                 Target &gt;70% ({formatTime((patientData.statistics.timeTargetMinutes || 0) * 0.7)})
@@ -1194,7 +1236,7 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
             
             <Box sx={{ display: 'flex', py: 1, alignItems: 'center', width: '90%' }}>
               <Typography variant="body2" sx={{ flex: 2 }}>
-                Below 70 mg/dL
+                Below {chartConfiguration.ranges?.target?.min || 70} mg/dL
               </Typography>
               <Typography variant="body2" sx={{ flex: 1.5, textAlign: 'center' }}>
                 Less than 4% ({formatTime((patientData.statistics.totalWearTimeMinutes || 0) * 0.04)})
@@ -1204,7 +1246,7 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
             
             <Box sx={{ display: 'flex', py: 1, alignItems: 'center', width: '90%' }}>
               <Typography variant="body2" sx={{ flex: 2 }}>
-                Below 54 mg/dL
+                Below {chartConfiguration.ranges?.veryLow?.max || 54} mg/dL
               </Typography>
               <Typography variant="body2" sx={{ flex: 1.5, textAlign: 'center' }}>
                 Less than 1% ({formatTime((patientData.statistics.totalWearTimeMinutes || 0) * 0.01)})
@@ -1214,7 +1256,7 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
             
             <Box sx={{ display: 'flex', py: 1, alignItems: 'center', width: '90%' }}>
               <Typography variant="body2" sx={{ flex: 2 }}>
-                Above 180 mg/dL
+                Above {chartConfiguration.ranges?.target?.max || 180} mg/dL
               </Typography>
               <Typography variant="body2" sx={{ flex: 1.5, textAlign: 'center' }}>
                 Less than 25% ({formatTime((patientData.statistics.totalWearTimeMinutes || 0) * 0.25)})
@@ -1224,7 +1266,7 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
             
             <Box sx={{ display: 'flex', py: 1, alignItems: 'center', width: '90%' }}>
               <Typography variant="body2" sx={{ flex: 2 }}>
-                Above 250 mg/dL
+                Above {chartConfiguration.ranges?.high?.max || 250} mg/dL
               </Typography>
               <Typography variant="body2" sx={{ flex: 1.5, textAlign: 'center' }}>
                 Less than 5% ({formatTime((patientData.statistics.totalWearTimeMinutes || 0) * 0.05)})
@@ -1234,7 +1276,7 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
             {/* Clinical Note */}
             <Box sx={{ mt: 3, pt: 2, borderTop: '1px solid #ddd', width: '90%' }}>
               <Typography variant="body2" sx={{ fontStyle: 'italic', fontSize: '0.875rem', textAlign: 'center' }}>
-                Each 5% increase in time in range (70-180 mg/dL) is clinically beneficial.
+                Each 5% increase in time in range ({chartConfiguration.ranges?.target?.min || 70}-{chartConfiguration.ranges?.target?.max || 180} mg/dL) is clinically beneficial.
               </Typography>
             </Box>
           </>
@@ -1243,7 +1285,7 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
             {/* Normal Range Row */}
             <Box sx={{ display: 'flex', py: 1, alignItems: 'center', width: '90%' }}>
               <Typography variant="body2" sx={{ flex: 2 }}>
-                Normal Range 5–15 ng/mL
+                Normal Range {chartConfiguration.ranges?.normal?.min || 10}–{chartConfiguration.ranges?.normal?.max || 30} ng/mL
               </Typography>
               <Typography variant="body2" sx={{ flex: 1.5, textAlign: 'center' }}>
                 Target 60-80% ({formatTime((patientData.statistics.timeNormalMinutes || 0) * 0.7)})
@@ -1253,7 +1295,7 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
             
             <Box sx={{ display: 'flex', py: 1, alignItems: 'center', width: '90%' }}>
               <Typography variant="body2" sx={{ flex: 2 }}>
-                Below 5 ng/mL
+                Below {chartConfiguration.ranges?.normal?.min || 10} ng/mL
               </Typography>
               <Typography variant="body2" sx={{ flex: 1.5, textAlign: 'center' }}>
                 Less than 10% ({formatTime((patientData.statistics.totalWearTimeMinutes || 0) * 0.10)})
@@ -1263,7 +1305,7 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
             
             <Box sx={{ display: 'flex', py: 1, alignItems: 'center', width: '90%' }}>
               <Typography variant="body2" sx={{ flex: 2 }}>
-                Below 2 ng/mL
+                Below {chartConfiguration.ranges?.veryLow?.max || 5} ng/mL
               </Typography>
               <Typography variant="body2" sx={{ flex: 1.5, textAlign: 'center' }}>
                 Less than 2% ({formatTime((patientData.statistics.totalWearTimeMinutes || 0) * 0.02)})
@@ -1273,7 +1315,7 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
             
             <Box sx={{ display: 'flex', py: 1, alignItems: 'center', width: '90%' }}>
               <Typography variant="body2" sx={{ flex: 2 }}>
-                Above 15 ng/mL
+                Above {chartConfiguration.ranges?.normal?.max || 30} ng/mL
               </Typography>
               <Typography variant="body2" sx={{ flex: 1.5, textAlign: 'center' }}>
                 Less than 20% ({formatTime((patientData.statistics.totalWearTimeMinutes || 0) * 0.20)})
@@ -1283,7 +1325,7 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
             
             <Box sx={{ display: 'flex', py: 1, alignItems: 'center', width: '90%' }}>
               <Typography variant="body2" sx={{ flex: 2 }}>
-                Above 20 ng/mL
+                Above {chartConfiguration.ranges?.high?.max || 50} ng/mL
               </Typography>
               <Typography variant="body2" sx={{ flex: 1.5, textAlign: 'center' }}>
                 Less than 5% ({formatTime((patientData.statistics.totalWearTimeMinutes || 0) * 0.05)})
@@ -1293,7 +1335,7 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
             {/* Clinical Note */}
             <Box sx={{ mt: 3, pt: 2, borderTop: '1px solid #ddd', width: '90%' }}>
               <Typography variant="body2" sx={{ fontStyle: 'italic', fontSize: '0.875rem', textAlign: 'center' }}>
-                Maintaining cortisol in normal range (5-15 ng/mL) is important for stress response and metabolic health.
+                Maintaining cortisol in normal range ({chartConfiguration.ranges?.normal?.min || 10}-{chartConfiguration.ranges?.normal?.max || 30} ng/mL) is important for stress response and metabolic health.
               </Typography>
             </Box>
           </>
