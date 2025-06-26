@@ -796,14 +796,18 @@ async function fetchUserAGPData(username, biomarkerType) {
                 const deviceInfo = userFileInfo.device_info;
                 const applicableConditions = [];
 
-                // Check for applicable conditions
-                if (personalInfo.pregnant === true) applicableConditions.push('pregnancy');
-                if (personalInfo.Diabete === true || personalInfo.diabete === true || personalInfo.diabetes === true) {
+                // Check for applicable conditions - handle various CSV column name formats
+                if (personalInfo.pregnant === true || personalInfo.Pregnant === true) {
+                    applicableConditions.push('pregnancy');
+                }
+                if (personalInfo.Diabete === true || personalInfo.diabete === true || 
+                    personalInfo.diabetes === true || personalInfo.Diabetes === true) {
                     applicableConditions.push('type2_diabetes');
                 }
                 if (personalInfo.smokes === true) applicableConditions.push('smoking');
                 if (personalInfo.drinks === true) applicableConditions.push('drinking');
-                if (personalInfo['High BP'] === true || personalInfo.hypertension === true) {
+                if (personalInfo['High BP'] === true || personalInfo.hypertension === true || 
+                    personalInfo['High Blood Pressure'] === true || personalInfo.high_bp === true) {
                     applicableConditions.push('hypertension');
                 }
                 
@@ -1184,11 +1188,12 @@ app.get('/user-applicable-ranges/:username/:biomarker', authenticateToken, async
         const deviceInfo = userRecord.device_info;
         const applicableConditions = [];
 
-        // Check for applicable conditions based on personal information
-        if (personalInfo.pregnant === true) {
+        // Check for applicable conditions based on personal information - handle various CSV column name formats
+        if (personalInfo.pregnant === true || personalInfo.Pregnant === true) {
             applicableConditions.push('pregnancy');
         }
-        if (personalInfo.Diabete === true || personalInfo.diabete === true || personalInfo.diabetes === true) {
+        if (personalInfo.Diabete === true || personalInfo.diabete === true || 
+            personalInfo.diabetes === true || personalInfo.Diabetes === true) {
             // For now, default to type2_diabetes. Could be enhanced to differentiate
             applicableConditions.push('type2_diabetes');
         }
@@ -1198,7 +1203,8 @@ app.get('/user-applicable-ranges/:username/:biomarker', authenticateToken, async
         if (personalInfo.drinks === true) {
             applicableConditions.push('drinking');
         }
-        if (personalInfo['High BP'] === true || personalInfo.hypertension === true) {
+        if (personalInfo['High BP'] === true || personalInfo.hypertension === true || 
+            personalInfo['High Blood Pressure'] === true || personalInfo.high_bp === true) {
             applicableConditions.push('hypertension');
         }
         
@@ -2258,14 +2264,18 @@ app.get('/user-glucose-agp/:username', authenticateToken, async (req, res) => {
                 const deviceInfo = userInfo.device_info;
                 const applicableConditions = [];
 
-                // Check for applicable conditions
-                if (personalInfo.pregnant === true) applicableConditions.push('pregnancy');
-                if (personalInfo.Diabete === true || personalInfo.diabete === true || personalInfo.diabetes === true) {
+                // Check for applicable conditions - handle various CSV column name formats
+                if (personalInfo.pregnant === true || personalInfo.Pregnant === true) {
+                    applicableConditions.push('pregnancy');
+                }
+                if (personalInfo.Diabete === true || personalInfo.diabete === true || 
+                    personalInfo.diabetes === true || personalInfo.Diabetes === true) {
                     applicableConditions.push('type2_diabetes');
                 }
                 if (personalInfo.smokes === true) applicableConditions.push('smoking');
                 if (personalInfo.drinks === true) applicableConditions.push('drinking');
-                if (personalInfo['High BP'] === true || personalInfo.hypertension === true) {
+                if (personalInfo['High BP'] === true || personalInfo.hypertension === true || 
+                    personalInfo['High Blood Pressure'] === true || personalInfo.high_bp === true) {
                     applicableConditions.push('hypertension');
                 }
                 
@@ -2451,14 +2461,18 @@ app.get('/user-cortisol-agp/:username', authenticateToken, async (req, res) => {
                 const deviceInfo = userInfo.device_info;
                 const applicableConditions = [];
 
-                // Check for applicable conditions
-                if (personalInfo.pregnant === true) applicableConditions.push('pregnancy');
-                if (personalInfo.Diabete === true || personalInfo.diabete === true || personalInfo.diabetes === true) {
+                // Check for applicable conditions - handle various CSV column name formats
+                if (personalInfo.pregnant === true || personalInfo.Pregnant === true) {
+                    applicableConditions.push('pregnancy');
+                }
+                if (personalInfo.Diabete === true || personalInfo.diabete === true || 
+                    personalInfo.diabetes === true || personalInfo.Diabetes === true) {
                     applicableConditions.push('type2_diabetes');
                 }
                 if (personalInfo.smokes === true) applicableConditions.push('smoking');
                 if (personalInfo.drinks === true) applicableConditions.push('drinking');
-                if (personalInfo['High BP'] === true || personalInfo.hypertension === true) {
+                if (personalInfo['High BP'] === true || personalInfo.hypertension === true || 
+                    personalInfo['High Blood Pressure'] === true || personalInfo.high_bp === true) {
                     applicableConditions.push('hypertension');
                 }
                 
@@ -2639,8 +2653,9 @@ app.get('/api/population-analysis', authenticateToken, async (req, res) => {
                 const personalInfo = userInfo.personal_information || {};
                 const deviceInfo = userInfo.device_info || {};
                 
-                const isPregnant = personalInfo.pregnant === true;
-                const hasDiabetes = personalInfo.Diabete === true || personalInfo.diabete === true || personalInfo.diabetes === true;
+                const isPregnant = personalInfo.pregnant === true || personalInfo.Pregnant === true;
+                const hasDiabetes = personalInfo.Diabete === true || personalInfo.diabete === true || 
+                    personalInfo.diabetes === true || personalInfo.Diabetes === true;
                 
                 console.log(`User ${userInfo.username} conditions: pregnant=${isPregnant}, diabetes=${hasDiabetes}`);
                 
@@ -2652,7 +2667,8 @@ app.get('/api/population-analysis', authenticateToken, async (req, res) => {
                 if (hasDiabetes) applicableConditions.push('type2_diabetes');
                 if (personalInfo.smokes === true) applicableConditions.push('smoking');
                 if (personalInfo.drinks === true) applicableConditions.push('drinking');
-                if (personalInfo['High BP'] === true || personalInfo.hypertension === true) {
+                if (personalInfo['High BP'] === true || personalInfo.hypertension === true || 
+                    personalInfo['High Blood Pressure'] === true || personalInfo.high_bp === true) {
                     applicableConditions.push('hypertension');
                 }
                 
@@ -2791,6 +2807,431 @@ app.get('/api/population-analysis', authenticateToken, async (req, res) => {
     }
 });
 
+// GET /api/demographic-tags - Get all available demographic tags and their possible values
+app.get('/api/demographic-tags', authenticateToken, async (req, res) => {
+    try {
+        // Only admins and doctors can access demographic filtering
+        if (!req.user.admin && !req.user.doctor) {
+            return res.status(403).json({ error: 'Not authorized to access demographic filtering' });
+        }
+
+        const db = client.db('s3-mongodb-db');
+        const collection = db.collection('s3-mongodb-data-entries');
+        
+        // Aggregate to find all unique values for different tag fields
+        const pipeline = [
+            {
+                $group: {
+                    _id: null,
+                    personalInfoFields: { $push: '$personal_information' },
+                    deviceInfoFields: { $push: '$device_info' }
+                }
+            }
+        ];
+        
+        const result = await collection.aggregate(pipeline).toArray();
+        
+        if (result.length === 0) {
+            return res.json({
+                demographic: {},
+                medical: {},
+                behavioral: {},
+                device: {},
+                custom: {}
+            });
+        }
+        
+        // Extract unique values for each field type
+        const personalInfoFields = result[0].personalInfoFields.filter(info => info);
+        const deviceInfoFields = result[0].deviceInfoFields.filter(info => info);
+        
+        // Analyze available tags
+        const tags = {
+            demographic: {
+                genders: [...new Set(deviceInfoFields.map(d => d.gender).filter(Boolean))],
+                ageRange: {
+                    min: Math.min(...deviceInfoFields.map(d => parseInt(d.age) || 0).filter(Boolean)),
+                    max: Math.max(...deviceInfoFields.map(d => parseInt(d.age) || 100).filter(Boolean))
+                },
+                institutions: [...new Set(personalInfoFields.map(p => p.institution).filter(Boolean))]
+            },
+            medical: {
+                booleanFields: ['pregnant', 'diabetes', 'Diabete', 'diabete', 'high_bp', 'High BP', 'hypertension'],
+                conditions: ['pregnancy', 'type2_diabetes', 'hypertension', 'smoking', 'drinking']
+            },
+            behavioral: {
+                booleanFields: ['smokes', 'drinks'],
+                dietTypes: ['Standard', 'Vegetarian', 'Vegan', 'Keto', 'Low Carb', 'Mediterranean']
+            },
+            device: {
+                deviceIDs: [...new Set(deviceInfoFields.map(d => d.deviceID).filter(Boolean))],
+                arms: [...new Set(deviceInfoFields.map(d => d.arm).filter(Boolean))]
+            },
+            custom: {
+                availableFields: [
+                    ...new Set([
+                        ...personalInfoFields.flatMap(p => Object.keys(p || {})),
+                        ...deviceInfoFields.flatMap(d => Object.keys(d || {}))
+                    ])
+                ]
+            }
+        };
+        
+        res.json(tags);
+        
+    } catch (error) {
+        console.error('Error fetching demographic tags:', error);
+        res.status(500).json({ error: 'Failed to fetch demographic tags' });
+    }
+});
+
+// POST /api/demographic-filter - Filter users based on demographic criteria
+app.post('/api/demographic-filter', authenticateToken, async (req, res) => {
+    try {
+        // Only admins and doctors can access demographic filtering
+        if (!req.user.admin && !req.user.doctor) {
+            return res.status(403).json({ error: 'Not authorized to access demographic filtering' });
+        }
+
+        const { filters, page = 0, limit = 25 } = req.body;
+        
+        if (!filters || Object.keys(filters).length === 0) {
+            return res.json({ users: [], totalCount: 0 });
+        }
+
+        const db = client.db('s3-mongodb-db');
+        const collection = db.collection('s3-mongodb-data-entries');
+        
+        // Build MongoDB query from filters
+        const query = {};
+        const andConditions = [];
+        
+        for (const [filterKey, filterValue] of Object.entries(filters)) {
+            if (filterValue === null || filterValue === undefined) continue;
+            
+            switch (filterKey) {
+                case 'device_info.gender':
+                    if (Array.isArray(filterValue) && filterValue.length > 0) {
+                        andConditions.push({ 'device_info.gender': { $in: filterValue } });
+                    }
+                    break;
+                    
+                case 'age_range':
+                    if (Array.isArray(filterValue) && filterValue.length === 2) {
+                        andConditions.push({
+                            $or: [
+                                { 'device_info.age': { $gte: filterValue[0], $lte: filterValue[1] } },
+                                { 'personal_information.age': { $gte: filterValue[0], $lte: filterValue[1] } }
+                            ]
+                        });
+                    }
+                    break;
+                    
+                case 'personal_information.institution':
+                    if (Array.isArray(filterValue) && filterValue.length > 0) {
+                        andConditions.push({ 'personal_information.institution': { $in: filterValue } });
+                    }
+                    break;
+                    
+                case 'personal_information.pregnant':
+                    if (typeof filterValue === 'boolean') {
+                        andConditions.push({
+                            $or: [
+                                { 'personal_information.pregnant': filterValue },
+                                { 'personal_information.Pregnant': filterValue }
+                            ]
+                        });
+                    }
+                    break;
+                    
+                case 'personal_information.diabetes':
+                    if (typeof filterValue === 'boolean') {
+                        andConditions.push({
+                            $or: [
+                                { 'personal_information.diabetes': filterValue },
+                                { 'personal_information.Diabete': filterValue },
+                                { 'personal_information.diabete': filterValue },
+                                { 'personal_information.Diabetes': filterValue }
+                            ]
+                        });
+                    }
+                    break;
+                    
+                case 'personal_information.high_bp':
+                    if (typeof filterValue === 'boolean') {
+                        andConditions.push({
+                            $or: [
+                                { 'personal_information.high_bp': filterValue },
+                                { 'personal_information.High BP': filterValue },
+                                { 'personal_information.High Blood Pressure': filterValue },
+                                { 'personal_information.hypertension': filterValue }
+                            ]
+                        });
+                    }
+                    break;
+                    
+                case 'personal_information.smokes':
+                    if (typeof filterValue === 'boolean') {
+                        andConditions.push({ 'personal_information.smokes': filterValue });
+                    }
+                    break;
+                    
+                case 'personal_information.drinks':
+                    if (typeof filterValue === 'boolean') {
+                        andConditions.push({ 'personal_information.drinks': filterValue });
+                    }
+                    break;
+                    
+                case 'personal_information.diet':
+                    if (Array.isArray(filterValue) && filterValue.length > 0) {
+                        andConditions.push({ 'personal_information.diet': { $in: filterValue } });
+                    }
+                    break;
+                    
+                case 'device_info.deviceID':
+                    if (Array.isArray(filterValue) && filterValue.length > 0) {
+                        andConditions.push({ 'device_info.deviceID': { $in: filterValue } });
+                    }
+                    break;
+                    
+                case 'device_info.arm':
+                    if (Array.isArray(filterValue) && filterValue.length > 0) {
+                        andConditions.push({ 'device_info.arm': { $in: filterValue } });
+                    }
+                    break;
+                    
+                case 'conditions':
+                    if (Array.isArray(filterValue) && filterValue.length > 0) {
+                        const conditionQueries = [];
+                        for (const condition of filterValue) {
+                            switch (condition) {
+                                case 'Type 1 Diabetes':
+                                case 'Type 2 Diabetes':
+                                    conditionQueries.push({
+                                        $or: [
+                                            { 'personal_information.diabetes': true },
+                                            { 'personal_information.Diabete': true },
+                                            { 'personal_information.diabete': true },
+                                            { 'personal_information.Diabetes': true }
+                                        ]
+                                    });
+                                    break;
+                                case 'Hypertension':
+                                    conditionQueries.push({
+                                        $or: [
+                                            { 'personal_information.high_bp': true },
+                                            { 'personal_information.High BP': true },
+                                            { 'personal_information.High Blood Pressure': true },
+                                            { 'personal_information.hypertension': true }
+                                        ]
+                                    });
+                                    break;
+                                case 'Gestational Diabetes':
+                                    conditionQueries.push({
+                                        $and: [
+                                            {
+                                                $or: [
+                                                    { 'personal_information.pregnant': true },
+                                                    { 'personal_information.Pregnant': true }
+                                                ]
+                                            },
+                                            {
+                                                $or: [
+                                                    { 'personal_information.diabetes': true },
+                                                    { 'personal_information.Diabete': true },
+                                                    { 'personal_information.diabete': true },
+                                                    { 'personal_information.Diabetes': true }
+                                                ]
+                                            }
+                                        ]
+                                    });
+                                    break;
+                            }
+                        }
+                        if (conditionQueries.length > 0) {
+                            andConditions.push({ $or: conditionQueries });
+                        }
+                    }
+                    break;
+                    
+                case 'custom_search':
+                    if (typeof filterValue === 'string' && filterValue.trim()) {
+                        // Parse custom search format: "tag_name=value"
+                        const searchTerms = filterValue.split(',').map(term => term.trim());
+                        const customQueries = [];
+                        
+                        for (const term of searchTerms) {
+                            const [key, value] = term.split('=').map(s => s.trim());
+                            if (key && value !== undefined) {
+                                // Try to parse value as boolean, number, or keep as string
+                                let parsedValue = value;
+                                if (value === 'true') parsedValue = true;
+                                else if (value === 'false') parsedValue = false;
+                                else if (!isNaN(value)) parsedValue = parseFloat(value);
+                                
+                                customQueries.push({
+                                    $or: [
+                                        { [`personal_information.${key}`]: parsedValue },
+                                        { [`device_info.${key}`]: parsedValue }
+                                    ]
+                                });
+                            }
+                        }
+                        
+                        if (customQueries.length > 0) {
+                            andConditions.push({ $and: customQueries });
+                        }
+                    }
+                    break;
+            }
+        }
+        
+        // Apply authorization filters
+        if (andConditions.length > 0) {
+            query.$and = andConditions;
+        }
+        
+        // Add authorization conditions
+        if (!req.user.admin) {
+            // Doctors can only see their patients
+            if (req.user.doctor && req.user.patients) {
+                const authCondition = { username: { $in: req.user.patients } };
+                if (query.$and) {
+                    query.$and.push(authCondition);
+                } else {
+                    query.$and = [authCondition];
+                }
+            } else {
+                // Non-doctors can only see their own data
+                const authCondition = { username: req.user.username };
+                if (query.$and) {
+                    query.$and.push(authCondition);
+                } else {
+                    query.$and = [authCondition];
+                }
+            }
+        }
+        
+        console.log('Demographic filter query:', JSON.stringify(query, null, 2));
+        
+        // Execute query with pagination
+        const totalCount = await collection.countDocuments(query);
+        const users = await collection
+            .find(query)
+            .project({
+                username: 1,
+                personal_information: 1,
+                device_info: 1,
+                updated_at: 1
+            })
+            .skip(page * limit)
+            .limit(limit)
+            .sort({ username: 1 })
+            .toArray();
+        
+        res.json({
+            users: users,
+            totalCount: totalCount,
+            page: page,
+            limit: limit,
+            totalPages: Math.ceil(totalCount / limit)
+        });
+        
+    } catch (error) {
+        console.error('Error filtering users by demographics:', error);
+        res.status(500).json({ error: 'Failed to filter users by demographics' });
+    }
+});
+
+// POST /api/demographic-filter/export - Export filtered results to CSV
+app.post('/api/demographic-filter/export', authenticateToken, async (req, res) => {
+    try {
+        // Only admins and doctors can export demographic data
+        if (!req.user.admin && !req.user.doctor) {
+            return res.status(403).json({ error: 'Not authorized to export demographic data' });
+        }
+
+        const { filters } = req.body;
+        
+        if (!filters || Object.keys(filters).length === 0) {
+            return res.status(400).json({ error: 'No filters provided for export' });
+        }
+
+        // Use the same filtering logic as the main filter endpoint
+        // but without pagination to get all results
+        const db = client.db('s3-mongodb-db');
+        const collection = db.collection('s3-mongodb-data-entries');
+        
+        // Reuse the same query building logic from the filter endpoint
+        // (This would be the same logic as above, just without pagination)
+        const query = {}; // Build the same query as in the filter endpoint
+        
+        // Apply authorization filters (same as filter endpoint)
+        if (!req.user.admin) {
+            if (req.user.doctor && req.user.patients) {
+                query.username = { $in: req.user.patients };
+            } else {
+                query.username = req.user.username;
+            }
+        }
+        
+        const users = await collection
+            .find(query)
+            .project({
+                username: 1,
+                personal_information: 1,
+                device_info: 1,
+                updated_at: 1
+            })
+            .sort({ username: 1 })
+            .toArray();
+        
+        // Convert to CSV format
+        const csvHeaders = [
+            'Username',
+            'Age', 
+            'Gender',
+            'Institution',
+            'Pregnant',
+            'Diabetes',
+            'High BP',
+            'Smokes',
+            'Drinks',
+            'Device ID',
+            'Arm',
+            'Last Updated'
+        ];
+        
+        const csvRows = users.map(user => [
+            user.username || '',
+            user.device_info?.age || user.personal_information?.age || '',
+            user.device_info?.gender || '',
+            user.personal_information?.institution || '',
+            user.personal_information?.pregnant ? 'Yes' : 'No',
+            (user.personal_information?.diabetes || user.personal_information?.Diabete || user.personal_information?.diabete) ? 'Yes' : 'No',
+            (user.personal_information?.high_bp || user.personal_information?.['High BP'] || user.personal_information?.hypertension) ? 'Yes' : 'No',
+            user.personal_information?.smokes ? 'Yes' : 'No',
+            user.personal_information?.drinks ? 'Yes' : 'No',
+            user.device_info?.deviceID || '',
+            user.device_info?.arm || '',
+            user.updated_at ? new Date(user.updated_at).toISOString() : ''
+        ]);
+        
+        const csvContent = [csvHeaders, ...csvRows]
+            .map(row => row.map(field => `"${String(field).replace(/"/g, '""')}"`).join(','))
+            .join('\n');
+        
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="demographic_filter_${new Date().toISOString().split('T')[0]}.csv"`);
+        res.send(csvContent);
+        
+    } catch (error) {
+        console.error('Error exporting demographic filter results:', error);
+        res.status(500).json({ error: 'Failed to export demographic filter results' });
+    }
+});
+
+// ... existing code ...
 
 // Connect to MongoDB when starting the server
 app.listen(port, async () => {

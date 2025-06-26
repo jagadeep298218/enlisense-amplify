@@ -50,6 +50,7 @@ import MedicalServicesIcon from '@mui/icons-material/MedicalServices';
 import SettingsIcon from '@mui/icons-material/Settings';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
+import FilterListIcon from '@mui/icons-material/FilterList';
 import CSVUpload from './CSVUpload';
 import PatientComparison from './PatientComparison';
 
@@ -451,6 +452,18 @@ const FileTracker = () => {
                                     </Typography>
                                 </Box>
                             </Box>
+                            
+                            {(user.admin || user.doctor) && (
+                                <>
+                                    <IconButton
+                                        color="inherit"
+                                        onClick={() => navigate('/demographic-filter')}
+                                        title="Demographic Filter"
+                                    >
+                                        <FilterListIcon />
+                                    </IconButton>
+                                </>
+                            )}
                             
                             {user.admin && (
                                 <>

@@ -32,6 +32,7 @@ import AGPComparison from './components/AGPComparison';
 import BiomarkerConfig from './components/BiomarkerConfig';
 import PopulationAnalysis from './components/PopulationAnalysis';
 import PaidUserManagement from './components/PaidUserManagement';
+import DemographicFilter from './components/DemographicFilter';
 
 /**
  * COMPONENT: App
@@ -174,6 +175,15 @@ function App() {
             element={
               <ProtectedRoute>
                 <PaidUserManagement />
+              </ProtectedRoute>
+            } 
+          />
+          
+          <Route 
+            path="/demographic-filter" 
+            element={
+              <ProtectedRoute>
+                <DemographicFilter />
               </ProtectedRoute>
             } 
           />
