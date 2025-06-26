@@ -27,6 +27,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import config from '../config';
 import {
     Container,
     Paper,
@@ -100,7 +101,7 @@ const FileTracker = () => {
                 }
 
                 // Add timeout to prevent hanging requests
-                const response = await axios.get('http://localhost:3000/filetracker', {
+                const response = await axios.get(`${config.API_URL}/filetracker`, {
                     headers: { 'Authorization': `Bearer ${token}` },
                     timeout: 30000 // 30 second timeout
                 });
@@ -229,7 +230,7 @@ const FileTracker = () => {
                 return;
             }
 
-            const response = await axios.get('http://localhost:3000/filetracker/download-csv', {
+            const response = await axios.get(`${config.API_URL}/filetracker/download-csv`, {
                 headers: { 'Authorization': `Bearer ${token}` },
                 responseType: 'blob',
                 timeout: 60000 // 60 second timeout for large files

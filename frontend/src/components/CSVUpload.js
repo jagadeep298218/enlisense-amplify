@@ -24,6 +24,7 @@
  */
 
 import React, { useState, useCallback, useMemo } from 'react';
+import config from '../config';
 import {
     Box,
     Header,
@@ -150,7 +151,7 @@ const CSVUpload = ({ onUploadComplete }) => {
             const formData = new FormData();
             formData.append('csvFile', file);
 
-            const response = await axios.post('http://localhost:3000/upload-personal-info', formData, {
+            const response = await axios.post(`${config.API_URL}/upload-personal-info`, formData, {
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'multipart/form-data'

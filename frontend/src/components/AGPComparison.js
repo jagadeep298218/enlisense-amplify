@@ -25,6 +25,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Plot from "react-plotly.js";
+import config from '../config';
 import {
   Container,
   Typography,
@@ -96,7 +97,7 @@ function AGPComparison() {
         const timeoutId = setTimeout(() => controller.abort(), 30000);
 
         const response = await fetch(
-          `http://localhost:3000/agp-comparison/${username1}/${username2}/${biomarkerType}`, 
+          `${config.API_URL}/agp-comparison/${username1}/${username2}/${biomarkerType}`, 
           {
             headers: { Authorization: `Bearer ${token}` },
             signal: controller.signal

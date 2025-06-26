@@ -9,6 +9,7 @@ import {
     Alert,
     CircularProgress
 } from '@mui/material';
+import config from '../config';
 
 const PopulationAnalysis = () => {
     const [populationData, setPopulationData] = useState(null);
@@ -23,7 +24,7 @@ const PopulationAnalysis = () => {
         try {
             setLoading(true);
             const token = localStorage.getItem('token');
-            const response = await fetch('http://localhost:3000/api/population-analysis', {
+            const response = await fetch(`${config.API_URL}/api/population-analysis`, {
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'

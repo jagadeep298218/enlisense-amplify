@@ -20,6 +20,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import config from '../config';
 import {
     Container,
     Paper,
@@ -69,7 +70,7 @@ const BiomarkerConfig = () => {
         try {
             setLoading(true);
             const token = localStorage.getItem('token');
-            const response = await fetch('http://localhost:3000/admin/biomarker-configs', {
+            const response = await fetch(`${config.API_URL}/admin/biomarker-configs`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             

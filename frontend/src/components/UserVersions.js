@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useParams, useNavigate } from 'react-router-dom';
+import config from '../config';
 import {
     Container,
     Paper,
@@ -79,7 +80,7 @@ const UserVersions = () => {
                 if (versionId) {
                     console.log('Fetching specific version data for versionId:', versionId);
                     try {
-                        const versionDataResponse = await axios.get(`http://localhost:3000/version-data/${versionId}`, {
+                        const versionDataResponse = await axios.get(`${config.API_URL}/version-data/${versionId}`, {
                             headers: { 'Authorization': `Bearer ${token}` }
                         });
                         console.log('Version data response:', versionDataResponse.data);
@@ -95,7 +96,7 @@ const UserVersions = () => {
                 }
 
                 // Fetch user device info first
-                const deviceInfoResponse = await axios.get(`http://localhost:3000/user-device-info/${username}`, {
+                const deviceInfoResponse = await axios.get(`${config.API_URL}/user-device-info/${username}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
 
@@ -103,7 +104,7 @@ const UserVersions = () => {
 
                 // Fetch personal information
                 try {
-                    const personalInfoResponse = await axios.get(`http://localhost:3000/user-personal-info/${username}`, {
+                    const personalInfoResponse = await axios.get(`${config.API_URL}/user-personal-info/${username}`, {
                         headers: { 'Authorization': `Bearer ${token}` }
                     });
                     setPersonalInfo(personalInfoResponse.data);
@@ -114,7 +115,7 @@ const UserVersions = () => {
 
                 // Fetch versions and sensor data in parallel
                 const promises = [
-                    axios.get(`http://localhost:3000/user-versions/${username}`, {
+                    axios.get(`${config.API_URL}/user-versions/${username}`, {
                         headers: { 'Authorization': `Bearer ${token}` }
                     }).catch(err => {
                         console.warn('No versions found for user:', err.response?.data?.error);
@@ -125,7 +126,7 @@ const UserVersions = () => {
                 // Fetch sensor data and data versions
                 if (deviceInfoResponse.data.etag) {
                     promises.push(
-                        axios.get(`http://localhost:3000/user-sensor-data/${deviceInfoResponse.data.etag}`, {
+                        axios.get(`${config.API_URL}/user-sensor-data/${deviceInfoResponse.data.etag}`, {
                             headers: { 'Authorization': `Bearer ${token}` }
                         }).catch(err => {
                             console.warn('No sensor data found for etag:', err.response?.data?.error);
@@ -146,7 +147,7 @@ const UserVersions = () => {
                 
                 console.log(`Fetching data versions for patient_id: ${patientId} (derived from file: ${deviceInfoResponse.data._id})`);
                 promises.push(
-                    axios.get(`http://localhost:3000/data-versions/${patientId}`, {
+                    axios.get(`${config.API_URL}/data-versions/${patientId}`, {
                         headers: { 'Authorization': `Bearer ${token}` }
                     }).then(response => {
                         console.log('Data versions API success:', response.data);
