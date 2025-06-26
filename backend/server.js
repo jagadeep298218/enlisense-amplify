@@ -776,14 +776,12 @@ async function fetchUserAGPData(username, biomarkerType) {
             return { error: `No ${biomarkerType} data found for user ${username}. Check if the data contains ${biomarkerType}1 or ${biomarkerType}2 fields.` };
         }
 
-        // Get applicable ranges for this user
+        // Get applicable ranges for this user from csv2ranges collection
         let customRanges = null;
         try {
-            const configCollection = db.collection('s3-mongodb-ranges');
-            const configDoc = await configCollection.findOne({ type: 'biomarker_ranges' });
+            const csv2rangesCollection = db.collection('s3-mongodb-csv2ranges');
             
             console.log(`=== DEBUGGING CUSTOM RANGES for ${username} ===`);
-            console.log('Config document exists:', !!configDoc);
             console.log('Biomarker type:', biomarkerType);
             console.log('User personal info exists:', !!userFileInfo.personal_information);
             if (userFileInfo.personal_information) {
@@ -791,7 +789,7 @@ async function fetchUserAGPData(username, biomarkerType) {
                 console.log('Personal info values:', userFileInfo.personal_information);
             }
             
-            if (configDoc && configDoc.configs[biomarkerType] && userFileInfo.personal_information) {
+            if (userFileInfo.personal_information) {
                 const personalInfo = userFileInfo.personal_information;
                 const deviceInfo = userFileInfo.device_info;
                 const applicableConditions = [];
@@ -816,15 +814,17 @@ async function fetchUserAGPData(username, biomarkerType) {
                 
                 // Get custom ranges if conditions apply
                 if (applicableConditions.length > 0) {
-                    const biomarkerConfig = configDoc.configs[biomarkerType];
                     const applicableRanges = [];
                     
-                    console.log('Available conditions in config:', Object.keys(biomarkerConfig.conditions || {}));
-                    
                     for (const condition of applicableConditions) {
-                        if (biomarkerConfig.conditions[condition]) {
+                        const rangeDoc = await csv2rangesCollection.findOne({ 
+                            biomarker_type: biomarkerType,
+                            condition: condition
+                        });
+                        
+                        if (rangeDoc && rangeDoc.ranges) {
                             console.log(`Found config for condition: ${condition}`);
-                            applicableRanges.push(biomarkerConfig.conditions[condition].ranges);
+                            applicableRanges.push(rangeDoc.ranges);
                         } else {
                             console.log(`No config found for condition: ${condition}`);
                         }
@@ -846,7 +846,7 @@ async function fetchUserAGPData(username, biomarkerType) {
                 }
             }
         } catch (error) {
-            console.log('Could not fetch custom ranges, using defaults:', error.message);
+            console.log('Could not fetch custom ranges from csv2ranges collection, using defaults:', error.message);
         }
 
         // Calculate statistics with custom ranges
@@ -938,7 +938,7 @@ app.get('/admin/auth-test', authenticateToken, async (req, res) => {
     }
 });
 
-// GET /admin/biomarker-configs - Get current biomarker range configurations
+// GET /admin/biomarker-configs - Get current biomarker range configurations from csv2ranges collection
 app.get('/admin/biomarker-configs', authenticateToken, async (req, res) => {
     try {
         // Check if user is admin
@@ -947,107 +947,87 @@ app.get('/admin/biomarker-configs', authenticateToken, async (req, res) => {
         }
 
         const db = client.db('s3-mongodb-db');
-        const configCollection = db.collection('s3-mongodb-ranges');
+        const csv2rangesCollection = db.collection('s3-mongodb-csv2ranges');
         
-        // Get the current configuration or return defaults
-        let config = await configCollection.findOne({ type: 'biomarker_ranges' });
+        // Get all biomarker ranges from the csv2ranges collection
+        const rangeDocuments = await csv2rangesCollection.find({}).toArray();
         
-        if (!config) {
-            // Return default configuration if none exists
-            config = {
-                type: 'biomarker_ranges',
-                configs: {
-                    glucose: {
-                        default: {
-                            veryLow: { min: 0, max: 54 },
-                            low: { min: 54, max: 70 },
-                            target: { min: 70, max: 180 },
-                            high: { min: 180, max: 250 },
-                            veryHigh: { min: 250, max: 400 }
-                        },
-                        conditions: {}
+        if (!rangeDocuments || rangeDocuments.length === 0) {
+            // Return default configuration if no ranges exist
+            const defaultConfig = {
+                glucose: {
+                    default: {
+                        veryLow: { min: 0, max: 54 },
+                        low: { min: 54, max: 70 },
+                        target: { min: 70, max: 180 },
+                        high: { min: 180, max: 250 },
+                        veryHigh: { min: 250, max: 400 }
                     },
-                    cortisol: {
-                        default: {
-                            veryLow: { min: 0, max: 2 },
-                            low: { min: 2, max: 5 },
-                            normal: { min: 5, max: 15 },
-                            high: { min: 15, max: 20 },
-                            veryHigh: { min: 20, max: 25 }
-                        },
-                        conditions: {}
-                    }
+                    conditions: {}
                 },
-                createdAt: new Date(),
-                updatedAt: new Date()
+                cortisol: {
+                    default: {
+                        veryLow: { min: 0, max: 2 },
+                        low: { min: 2, max: 5 },
+                        normal: { min: 5, max: 15 },
+                        high: { min: 15, max: 20 },
+                        veryHigh: { min: 20, max: 25 }
+                    },
+                    conditions: {}
+                }
             };
+            
+            return res.json({ configs: defaultConfig });
         }
 
-        res.json({ configs: config.configs });
+        // Transform the csv2ranges documents into the expected format
+        const configs = {
+            glucose: { default: {}, conditions: {} },
+            cortisol: { default: {}, conditions: {} }
+        };
+
+        rangeDocuments.forEach(doc => {
+            const biomarker = doc.biomarker_type?.toLowerCase();
+            const condition = doc.condition || 'default';
+            
+            if (biomarker && ['glucose', 'cortisol'].includes(biomarker)) {
+                if (condition === 'default') {
+                    configs[biomarker].default = doc.ranges || {};
+                } else {
+                    configs[biomarker].conditions[condition] = {
+                        name: doc.condition_name || condition,
+                        description: doc.description || '',
+                        ranges: doc.ranges || {}
+                    };
+                }
+            }
+        });
+
+        res.json({ configs });
 
     } catch (error) {
-        console.error('Error fetching biomarker configurations:', error);
+        console.error('Error fetching biomarker configurations from csv2ranges:', error);
         res.status(500).json({ error: 'Failed to fetch biomarker configurations' });
     }
 });
 
-// POST /admin/biomarker-configs - Save biomarker range configurations
+// POST /admin/biomarker-configs - DISABLED: Ranges are now sourced from csv2ranges collection
 app.post('/admin/biomarker-configs', authenticateToken, async (req, res) => {
     try {
-        console.log('Save request from user:', req.user.username, 'Admin status:', req.user.admin);
-        console.log('Request body size:', JSON.stringify(req.body).length);
-        
         // Check if user is admin
         if (!req.user.admin) {
-            console.log('Access denied - user is not admin');
-            return res.status(403).json({ error: 'Only administrators can modify biomarker configurations' });
+            return res.status(403).json({ error: 'Only administrators can access biomarker configurations' });
         }
 
-        const { configs } = req.body;
-        
-        if (!configs) {
-            console.log('No configs in request body');
-            return res.status(400).json({ error: 'Configurations data is required' });
-        }
-        
-        console.log('Configs structure:', Object.keys(configs));
-        console.log('Glucose config exists:', !!configs.glucose);
-        console.log('Cortisol config exists:', !!configs.cortisol);
-
-        const db = client.db('s3-mongodb-db');
-        const configCollection = db.collection('s3-mongodb-ranges');
-        
-        console.log('Attempting to save to MongoDB collection: s3-mongodb-ranges...');
-        
-        // Upsert the configuration
-        const result = await configCollection.updateOne(
-            { type: 'biomarker_ranges' },
-            {
-                $set: {
-                    configs: configs,
-                    updatedAt: new Date(),
-                    updatedBy: req.user.username
-                },
-                $setOnInsert: {
-                    type: 'biomarker_ranges',
-                    createdAt: new Date(),
-                    createdBy: req.user.username
-                }
-            },
-            { upsert: true }
-        );
-
-        console.log('Biomarker configuration saved by admin:', req.user.username);
-        res.json({ 
-            success: true, 
-            message: 'Biomarker configurations saved successfully',
-            modified: result.modifiedCount,
-            upserted: result.upsertedCount
+        // Ranges are now read-only from the csv2ranges collection
+        res.status(405).json({ 
+            error: 'Biomarker range configuration is read-only',
+            message: 'Ranges are automatically sourced from the s3-mongodb-csv2ranges collection and cannot be modified through this interface.'
         });
 
     } catch (error) {
-        console.error('Error saving biomarker configurations:', error);
-        res.status(500).json({ error: 'Failed to save biomarker configurations' });
+        console.error('Error in disabled biomarker config save endpoint:', error);
+        res.status(500).json({ error: 'Endpoint disabled' });
     }
 });
 
@@ -1062,12 +1042,20 @@ app.get('/admin/biomarker-configs/:biomarker', authenticateToken, async (req, re
         }
 
         const db = client.db('s3-mongodb-db');
-        const configCollection = db.collection('s3-mongodb-ranges');
+        const csv2rangesCollection = db.collection('s3-mongodb-csv2ranges');
         
-        const config = await configCollection.findOne({ type: 'biomarker_ranges' });
+        // Look for the specific biomarker and default condition
+        const rangeDoc = await csv2rangesCollection.findOne({ 
+            biomarker_type: biomarker,
+            $or: [
+                { condition: 'default' },
+                { condition: { $exists: false } },
+                { condition: null }
+            ]
+        });
         
-        if (!config || !config.configs[biomarker]) {
-            // Return default ranges if no custom configuration exists
+        if (!rangeDoc || !rangeDoc.ranges) {
+            // Return default ranges if no configuration exists
             const defaultRanges = {
                 glucose: {
                     veryLow: { min: 0, max: 54 },
@@ -1088,18 +1076,10 @@ app.get('/admin/biomarker-configs/:biomarker', authenticateToken, async (req, re
             return res.json({ ranges: defaultRanges[biomarker] });
         }
 
-        // Get the specific condition ranges or default
-        let ranges;
-        if (condition === 'default') {
-            ranges = config.configs[biomarker].default;
-        } else {
-            ranges = config.configs[biomarker].conditions[condition]?.ranges || config.configs[biomarker].default;
-        }
-
-        res.json({ ranges });
+        res.json({ ranges: rangeDoc.ranges });
 
     } catch (error) {
-        console.error('Error fetching specific biomarker configuration:', error);
+        console.error('Error fetching specific biomarker configuration from csv2ranges:', error);
         res.status(500).json({ error: 'Failed to fetch biomarker configuration' });
     }
 });
@@ -1114,12 +1094,30 @@ app.get('/admin/biomarker-configs/:biomarker/:condition', authenticateToken, asy
         }
 
         const db = client.db('s3-mongodb-db');
-        const configCollection = db.collection('s3-mongodb-ranges');
+        const csv2rangesCollection = db.collection('s3-mongodb-csv2ranges');
         
-        const config = await configCollection.findOne({ type: 'biomarker_ranges' });
+        // Look for the specific biomarker and condition
+        const rangeDoc = await csv2rangesCollection.findOne({ 
+            biomarker_type: biomarker,
+            condition: condition
+        });
         
-        if (!config || !config.configs[biomarker]) {
-            // Return default ranges if no custom configuration exists
+        if (!rangeDoc || !rangeDoc.ranges) {
+            // Fall back to default condition for this biomarker
+            const defaultRangeDoc = await csv2rangesCollection.findOne({ 
+                biomarker_type: biomarker,
+                $or: [
+                    { condition: 'default' },
+                    { condition: { $exists: false } },
+                    { condition: null }
+                ]
+            });
+            
+            if (defaultRangeDoc && defaultRangeDoc.ranges) {
+                return res.json({ ranges: defaultRangeDoc.ranges });
+            }
+            
+            // Return hardcoded defaults if no database configuration exists
             const defaultRanges = {
                 glucose: {
                     veryLow: { min: 0, max: 54 },
@@ -1140,18 +1138,10 @@ app.get('/admin/biomarker-configs/:biomarker/:condition', authenticateToken, asy
             return res.json({ ranges: defaultRanges[biomarker] });
         }
 
-        // Get the specific condition ranges or default
-        let ranges;
-        if (condition === 'default') {
-            ranges = config.configs[biomarker].default;
-        } else {
-            ranges = config.configs[biomarker].conditions[condition]?.ranges || config.configs[biomarker].default;
-        }
-
-        res.json({ ranges });
+        res.json({ ranges: rangeDoc.ranges });
 
     } catch (error) {
-        console.error('Error fetching specific biomarker configuration:', error);
+        console.error('Error fetching specific biomarker configuration from csv2ranges:', error);
         res.status(500).json({ error: 'Failed to fetch biomarker configuration' });
     }
 });
@@ -1226,40 +1216,41 @@ app.get('/user-applicable-ranges/:username/:biomarker', authenticateToken, async
             });
         }
 
-        // Fetch configurations for applicable conditions from the new storage format
-        const configCollection = db.collection('s3-mongodb-ranges');
-        const configDoc = await configCollection.findOne({ type: 'biomarker_ranges' });
-
-        if (!configDoc || !configDoc.configs[biomarker]) {
-            return res.json({
-                applicableConditions: applicableConditions,
-                personalInfo: personalInfo,
-                ranges: null,
-                useDefault: true,
-                message: `Conditions detected: ${applicableConditions.join(', ')}, but no custom ranges configured. Using default ranges.`
-            });
-        }
-
-        const biomarkerConfig = configDoc.configs[biomarker];
+        // Fetch configurations for applicable conditions from csv2ranges collection
+        const csv2rangesCollection = db.collection('s3-mongodb-csv2ranges');
         const applicableRanges = [];
         
         // Find ranges for applicable conditions
         for (const condition of applicableConditions) {
-            if (biomarkerConfig.conditions[condition]) {
+            const rangeDoc = await csv2rangesCollection.findOne({ 
+                biomarker_type: biomarker,
+                condition: condition
+            });
+            
+            if (rangeDoc && rangeDoc.ranges) {
                 applicableRanges.push({
                     condition: condition,
-                    ranges: biomarkerConfig.conditions[condition].ranges,
-                    name: biomarkerConfig.conditions[condition].name
+                    ranges: rangeDoc.ranges,
+                    name: rangeDoc.condition_name || condition
                 });
             }
         }
 
-        // If no custom configs found, return default
+        // If no custom configs found, try to get default
         if (applicableRanges.length === 0) {
+            const defaultRangeDoc = await csv2rangesCollection.findOne({ 
+                biomarker_type: biomarker,
+                $or: [
+                    { condition: 'default' },
+                    { condition: { $exists: false } },
+                    { condition: null }
+                ]
+            });
+            
             return res.json({
                 applicableConditions: applicableConditions,
                 personalInfo: personalInfo,
-                ranges: biomarkerConfig.default,
+                ranges: defaultRangeDoc ? defaultRangeDoc.ranges : null,
                 useDefault: true,
                 message: `Conditions detected: ${applicableConditions.join(', ')}, but no custom ranges configured. Using default ranges.`
             });
@@ -2102,13 +2093,12 @@ app.get('/user-glucose-agp/:username', authenticateToken, async (req, res) => {
         console.log('=== User AGP Final Results ===');
         console.log('Total glucose data points for', username, ':', glucoseData.length);
         
-        // Get applicable ranges for this user
+        // Get applicable ranges for this user from csv2ranges collection
         let customRanges = null;
         try {
-            const configCollection = db.collection('s3-mongodb-ranges');
-            const configDoc = await configCollection.findOne({ type: 'biomarker_ranges' });
+            const csv2rangesCollection = db.collection('s3-mongodb-csv2ranges');
             
-            if (configDoc && configDoc.configs.glucose && userInfo.personal_information) {
+            if (userInfo.personal_information) {
                 const personalInfo = userInfo.personal_information;
                 const deviceInfo = userInfo.device_info;
                 const applicableConditions = [];
@@ -2131,12 +2121,16 @@ app.get('/user-glucose-agp/:username', authenticateToken, async (req, res) => {
 
                 // Get custom ranges if conditions apply
                 if (applicableConditions.length > 0) {
-                    const biomarkerConfig = configDoc.configs.glucose;
                     const applicableRanges = [];
                     
                     for (const condition of applicableConditions) {
-                        if (biomarkerConfig.conditions[condition]) {
-                            applicableRanges.push(biomarkerConfig.conditions[condition].ranges);
+                        const rangeDoc = await csv2rangesCollection.findOne({ 
+                            biomarker_type: 'glucose',
+                            condition: condition
+                        });
+                        
+                        if (rangeDoc && rangeDoc.ranges) {
+                            applicableRanges.push(rangeDoc.ranges);
                         }
                     }
                     
@@ -2151,7 +2145,7 @@ app.get('/user-glucose-agp/:username', authenticateToken, async (req, res) => {
                 }
             }
         } catch (error) {
-            console.log('Could not fetch custom ranges for glucose AGP, using defaults:', error.message);
+            console.log('Could not fetch custom ranges for glucose AGP from csv2ranges collection, using defaults:', error.message);
         }
 
         // Calculate AGP statistics and percentiles
@@ -2292,13 +2286,12 @@ app.get('/user-cortisol-agp/:username', authenticateToken, async (req, res) => {
         console.log('=== User Cortisol AGP Final Results ===');
         console.log('Total cortisol data points for', username, ':', cortisolData.length);
         
-        // Get applicable ranges for this user
+        // Get applicable ranges for this user from csv2ranges collection
         let customRanges = null;
         try {
-            const configCollection = db.collection('s3-mongodb-ranges');
-            const configDoc = await configCollection.findOne({ type: 'biomarker_ranges' });
+            const csv2rangesCollection = db.collection('s3-mongodb-csv2ranges');
             
-            if (configDoc && configDoc.configs.cortisol && userInfo.personal_information) {
+            if (userInfo.personal_information) {
                 const personalInfo = userInfo.personal_information;
                 const deviceInfo = userInfo.device_info;
                 const applicableConditions = [];
@@ -2321,12 +2314,16 @@ app.get('/user-cortisol-agp/:username', authenticateToken, async (req, res) => {
 
                 // Get custom ranges if conditions apply
                 if (applicableConditions.length > 0) {
-                    const biomarkerConfig = configDoc.configs.cortisol;
                     const applicableRanges = [];
                     
                     for (const condition of applicableConditions) {
-                        if (biomarkerConfig.conditions[condition]) {
-                            applicableRanges.push(biomarkerConfig.conditions[condition].ranges);
+                        const rangeDoc = await csv2rangesCollection.findOne({ 
+                            biomarker_type: 'cortisol',
+                            condition: condition
+                        });
+                        
+                        if (rangeDoc && rangeDoc.ranges) {
+                            applicableRanges.push(rangeDoc.ranges);
                         }
                     }
                     
@@ -2341,7 +2338,7 @@ app.get('/user-cortisol-agp/:username', authenticateToken, async (req, res) => {
                 }
             }
         } catch (error) {
-            console.log('Could not fetch custom ranges for cortisol AGP, using defaults:', error.message);
+            console.log('Could not fetch custom ranges for cortisol AGP from csv2ranges collection, using defaults:', error.message);
         }
 
         // Calculate cortisol statistics and percentiles
@@ -2398,10 +2395,7 @@ app.get('/api/population-analysis', authenticateToken, async (req, res) => {
 
         const db = client.db('s3-mongodb-db');
         const dataCollection = db.collection('s3-mongodb-data-entries');
-        const configCollection = db.collection('s3-mongodb-ranges');
-        
-        // Get biomarker configuration
-        const configDoc = await configCollection.findOne({ type: 'biomarker_ranges' });
+        const csv2rangesCollection = db.collection('s3-mongodb-csv2ranges');
         
         // Initialize population groups
         const populations = {
@@ -2495,40 +2489,42 @@ app.get('/api/population-analysis', authenticateToken, async (req, res) => {
                 
                 console.log(`User ${userInfo.username} conditions: pregnant=${isPregnant}, diabetes=${hasDiabetes}`);
                 
-                // Get applicable custom ranges
+                // Get applicable custom ranges from csv2ranges collection
                 let customRanges = null;
-                if (configDoc && configDoc.configs.glucose) {
-                    const applicableConditions = [];
-                    
-                    if (isPregnant) applicableConditions.push('pregnancy');
-                    if (hasDiabetes) applicableConditions.push('type2_diabetes');
-                    if (personalInfo.smokes === true) applicableConditions.push('smoking');
-                    if (personalInfo.drinks === true) applicableConditions.push('drinking');
-                    if (personalInfo['High BP'] === true || personalInfo.hypertension === true) {
-                        applicableConditions.push('hypertension');
-                    }
-                    
-                    const age = deviceInfo?.age || personalInfo.age;
-                    if (age && (parseInt(age) < 18 || age < 18)) {
-                        applicableConditions.push('pediatric');
-                    }
+                const applicableConditions = [];
+                
+                if (isPregnant) applicableConditions.push('pregnancy');
+                if (hasDiabetes) applicableConditions.push('type2_diabetes');
+                if (personalInfo.smokes === true) applicableConditions.push('smoking');
+                if (personalInfo.drinks === true) applicableConditions.push('drinking');
+                if (personalInfo['High BP'] === true || personalInfo.hypertension === true) {
+                    applicableConditions.push('hypertension');
+                }
+                
+                const age = deviceInfo?.age || personalInfo.age;
+                if (age && (parseInt(age) < 18 || age < 18)) {
+                    applicableConditions.push('pediatric');
+                }
 
-                    if (applicableConditions.length > 0) {
-                        const biomarkerConfig = configDoc.configs.glucose;
-                        const applicableRanges = [];
+                if (applicableConditions.length > 0) {
+                    const applicableRanges = [];
+                    
+                    for (const condition of applicableConditions) {
+                        const rangeDoc = await csv2rangesCollection.findOne({ 
+                            biomarker_type: 'glucose',
+                            condition: condition
+                        });
                         
-                        for (const condition of applicableConditions) {
-                            if (biomarkerConfig.conditions[condition]) {
-                                applicableRanges.push(biomarkerConfig.conditions[condition].ranges);
-                            }
+                        if (rangeDoc && rangeDoc.ranges) {
+                            applicableRanges.push(rangeDoc.ranges);
                         }
-                        
-                        if (applicableRanges.length > 0) {
-                            if (applicableRanges.length === 1) {
-                                customRanges = applicableRanges[0];
-                            } else {
-                                customRanges = averageRanges(applicableRanges, 'glucose');
-                            }
+                    }
+                    
+                    if (applicableRanges.length > 0) {
+                        if (applicableRanges.length === 1) {
+                            customRanges = applicableRanges[0];
+                        } else {
+                            customRanges = averageRanges(applicableRanges, 'glucose');
                         }
                     }
                 }
