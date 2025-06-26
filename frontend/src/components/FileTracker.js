@@ -49,6 +49,7 @@ import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import MedicalServicesIcon from '@mui/icons-material/MedicalServices';
 import SettingsIcon from '@mui/icons-material/Settings';
 import BarChartIcon from '@mui/icons-material/BarChart';
+import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import CSVUpload from './CSVUpload';
 import PatientComparison from './PatientComparison';
 
@@ -475,6 +476,14 @@ const FileTracker = () => {
                                         title="Biomarker Configuration"
                                     >
                                         <SettingsIcon />
+                                    </IconButton>
+                                    
+                                    <IconButton
+                                        color="inherit"
+                                        onClick={() => navigate('/admin/paid-users')}
+                                        title="Paid User Management"
+                                    >
+                                        <AccountBalanceIcon />
                                     </IconButton>
                                 </>
                             )}

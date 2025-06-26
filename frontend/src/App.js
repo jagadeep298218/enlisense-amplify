@@ -31,6 +31,7 @@ import AGPReport from './components/AGPReport';
 import AGPComparison from './components/AGPComparison';
 import BiomarkerConfig from './components/BiomarkerConfig';
 import PopulationAnalysis from './components/PopulationAnalysis';
+import PaidUserManagement from './components/PaidUserManagement';
 
 /**
  * COMPONENT: App
@@ -164,6 +165,15 @@ function App() {
             element={
               <ProtectedRoute>
                 <PopulationAnalysis />
+              </ProtectedRoute>
+            } 
+          />
+          
+          <Route 
+            path="/admin/paid-users" 
+            element={
+              <ProtectedRoute>
+                <PaidUserManagement />
               </ProtectedRoute>
             } 
           />

@@ -11,7 +11,7 @@ const csv = require('csv-parser'); //used to parse CSV files
 const fs = require('fs');
 
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 8080;
 const JWT_SECRET = 'your-secret-key'; // In production, use environment variable
 
 app.use(cors());
@@ -90,7 +90,8 @@ app.post('/login', async (req, res) => {
             admin: user.admin,
             doctor: user.doctor,
             patient: user.patient,
-            patients: user.patients || []
+            patients: user.patients || [],
+            paid_user: user.paid_user || false
         }, JWT_SECRET, { expiresIn: '24h' });
 
         res.json({
@@ -100,7 +101,8 @@ app.post('/login', async (req, res) => {
                 name: user.name,
                 admin: user.admin,
                 doctor: user.doctor,
-                patient: user.patient
+                patient: user.patient,
+                paid_user: user.paid_user || false
             }
         });
     } catch (error) {
@@ -1283,6 +1285,159 @@ app.get('/user-applicable-ranges/:username/:biomarker', authenticateToken, async
     } catch (error) {
         console.error('Error fetching applicable ranges:', error);
         res.status(500).json({ error: 'Failed to fetch applicable ranges' });
+    }
+});
+
+// Admin Paid User Management Endpoints
+// GET /admin/paid-users - Get all users with their paid status
+app.get('/admin/paid-users', authenticateToken, async (req, res) => {
+    try {
+        // Check if user is admin
+        if (!req.user.admin) {
+            return res.status(403).json({ error: 'Only administrators can manage paid users' });
+        }
+
+        const db = client.db('s3-mongodb-db');
+        const collection = db.collection('s3-mongodb-file_tracker');
+        
+        // Get all users with their paid status
+        const users = await collection.find({}, {
+            projection: {
+                username: 1,
+                name: 1,
+                admin: 1,
+                doctor: 1,
+                patient: 1,
+                paid_user: 1
+            }
+        }).toArray();
+
+        res.json({ users });
+
+    } catch (error) {
+        console.error('Error fetching paid users:', error);
+        res.status(500).json({ error: 'Failed to fetch paid users' });
+    }
+});
+
+// POST /admin/paid-users/:username - Set paid user status
+app.post('/admin/paid-users/:username', authenticateToken, async (req, res) => {
+    try {
+        // Check if user is admin
+        if (!req.user.admin) {
+            return res.status(403).json({ error: 'Only administrators can manage paid users' });
+        }
+
+        const { username } = req.params;
+        const { paid_user } = req.body;
+
+        if (typeof paid_user !== 'boolean') {
+            return res.status(400).json({ error: 'paid_user must be a boolean value' });
+        }
+
+        const db = client.db('s3-mongodb-db');
+        const collection = db.collection('s3-mongodb-file_tracker');
+        
+        // Check if user exists
+        const user = await collection.findOne({ username: username });
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        // Update paid user status
+        const result = await collection.updateOne(
+            { username: username },
+            { 
+                $set: { 
+                    paid_user: paid_user,
+                    paid_user_updated_at: new Date(),
+                    paid_user_updated_by: req.user.username
+                }
+            }
+        );
+
+        if (result.modifiedCount === 0) {
+            return res.status(400).json({ error: 'Failed to update paid user status' });
+        }
+
+        res.json({ 
+            success: true, 
+            message: `User ${username} ${paid_user ? 'granted' : 'revoked'} paid access`,
+            username: username,
+            paid_user: paid_user
+        });
+
+    } catch (error) {
+        console.error('Error updating paid user status:', error);
+        res.status(500).json({ error: 'Failed to update paid user status' });
+    }
+});
+
+// GET /admin/paid-users/:username - Get specific user's paid status
+app.get('/admin/paid-users/:username', authenticateToken, async (req, res) => {
+    try {
+        // Check if user is admin
+        if (!req.user.admin) {
+            return res.status(403).json({ error: 'Only administrators can view paid user status' });
+        }
+
+        const { username } = req.params;
+        const db = client.db('s3-mongodb-db');
+        const collection = db.collection('s3-mongodb-file_tracker');
+        
+        const user = await collection.findOne({ username: username }, {
+            projection: {
+                username: 1,
+                name: 1,
+                paid_user: 1,
+                paid_user_updated_at: 1,
+                paid_user_updated_by: 1
+            }
+        });
+
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        res.json({ 
+            username: user.username,
+            name: user.name,
+            paid_user: user.paid_user || false,
+            paid_user_updated_at: user.paid_user_updated_at,
+            paid_user_updated_by: user.paid_user_updated_by
+        });
+
+    } catch (error) {
+        console.error('Error fetching paid user status:', error);
+        res.status(500).json({ error: 'Failed to fetch paid user status' });
+    }
+});
+
+// GET /user/paid-status - Get current user's paid status (for self-check)
+app.get('/user/paid-status', authenticateToken, async (req, res) => {
+    try {
+        const db = client.db('s3-mongodb-db');
+        const collection = db.collection('s3-mongodb-file_tracker');
+        
+        const user = await collection.findOne({ username: req.user.username }, {
+            projection: {
+                username: 1,
+                paid_user: 1
+            }
+        });
+
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        res.json({ 
+            username: user.username,
+            paid_user: user.paid_user || false
+        });
+
+    } catch (error) {
+        console.error('Error fetching user paid status:', error);
+        res.status(500).json({ error: 'Failed to fetch paid status' });
     }
 });
 

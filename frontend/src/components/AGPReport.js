@@ -88,6 +88,8 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
   const [applicableRanges, setApplicableRanges] = useState(null);
   const [rangeMessage, setRangeMessage] = useState('');
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isPaidUser, setIsPaidUser] = useState(false);
+  const [paidStatusChecked, setPaidStatusChecked] = useState(false);
   const reportRef = useRef();
 
   /**
@@ -201,22 +203,60 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
   }, []);
 
   /**
+   * FUNCTION: checkPaidStatus
+   * PURPOSE: Check if current user has paid access for downloads
+   * DEPENDENCIES: username
+   */
+  const checkPaidStatus = useCallback(async () => {
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) return false;
+
+      const response = await fetch('http://localhost:3000/user/paid-status', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setIsPaidUser(data.paid_user || false);
+        setPaidStatusChecked(true);
+        return data.paid_user || false;
+      }
+      return false;
+    } catch (error) {
+      console.error('Error checking paid status:', error);
+      setIsPaidUser(false);
+      setPaidStatusChecked(true);
+      return false;
+    }
+  }, []);
+
+  /**
    * FUNCTION: downloadCSV
    * PURPOSE: Export additional metrics as CSV file with patient data
-   * DEPENDENCIES: patientData, biomarkerType, username
+   * DEPENDENCIES: patientData, biomarkerType, username, isPaidUser
    * 
    * PROCESS:
-   * 1. Calculate CGM active percentage from wear time vs. total possible time
-   * 2. Format date range from actual data timestamps
-   * 3. Build metrics array with proper null handling
-   * 4. Generate CSV content and trigger download
+   * 1. Check if user has paid access
+   * 2. Calculate CGM active percentage from wear time vs. total possible time
+   * 3. Format date range from actual data timestamps
+   * 4. Build metrics array with proper null handling
+   * 5. Generate CSV content and trigger download
    * 
    * ERROR HANDLING:
    * - [HIGH] Date parsing errors can crash function
    * - [MEDIUM] Missing statistics fields cause undefined values
    * - [LOW] Blob creation may fail in older browsers
    */
-  const downloadCSV = useCallback(() => {
+  const downloadCSV = useCallback(async () => {
+    // Check paid status before allowing download
+    if (!isPaidUser) {
+      const currentPaidStatus = await checkPaidStatus();
+      if (!currentPaidStatus) {
+        alert('CSV download is a premium feature. Please contact your administrator to upgrade to a paid account.');
+        return;
+      }
+    }
     try {
       // Validate required data before processing
       if (!patientData || !patientData.statistics) {
@@ -321,19 +361,20 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
         : 'Error generating CSV file. Please check your browser settings and try again.';
       alert(errorMessage);
     }
-  }, [patientData, biomarkerType, username]);
+  }, [patientData, biomarkerType, username, isPaidUser, checkPaidStatus]);
 
   /**
    * FUNCTION: downloadPDF
    * PURPOSE: Generate and download PDF report from current DOM state
-   * DEPENDENCIES: reportRef, html2canvas, jsPDF, patientData
+   * DEPENDENCIES: reportRef, html2canvas, jsPDF, patientData, isPaidUser
    * 
    * PROCESS:
-   * 1. Hide interactive elements (.pdf-hide class)
-   * 2. Capture DOM as high-resolution canvas
-   * 3. Calculate optimal PDF dimensions for A4 format
-   * 4. Generate PDF and trigger download
-   * 5. Restore UI state
+   * 1. Check if user has paid access
+   * 2. Hide interactive elements (.pdf-hide class)
+   * 3. Capture DOM as high-resolution canvas
+   * 4. Calculate optimal PDF dimensions for A4 format
+   * 5. Generate PDF and trigger download
+   * 6. Restore UI state
    * 
    * ERROR HANDLING:
    * - [CRITICAL] html2canvas may fail on complex DOM structures
@@ -342,6 +383,14 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
    * - [LOW] PDF library may not support certain image formats
    */
   const downloadPDF = useCallback(async () => {
+    // Check paid status before allowing download
+    if (!isPaidUser) {
+      const currentPaidStatus = await checkPaidStatus();
+      if (!currentPaidStatus) {
+        alert('PDF download is a premium feature. Please contact your administrator to upgrade to a paid account.');
+        return;
+      }
+    }
     try {
       setIsDownloading(true);
       
@@ -444,7 +493,7 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
     } finally {
       setIsDownloading(false);
     }
-  }, [patientData, biomarkerType, username]);
+  }, [patientData, biomarkerType, username, isPaidUser, checkPaidStatus]);
 
   /**
    * EFFECT: Data Fetching for AGP/ACP Report
@@ -591,11 +640,13 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
     // Only fetch if we have a username
     if (username) {
       fetchAGPData();
+      // Check paid status in parallel
+      checkPaidStatus();
     } else {
       setLoading(false);
       setError("No username provided");
     }
-  }, [username, biomarkerType]);
+  }, [username, biomarkerType, checkPaidStatus]);
 
   if (loading) {
     return (
@@ -750,16 +801,20 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
               disabled={isDownloading}
               variant="outlined"
               color="primary"
+              title={!isPaidUser && paidStatusChecked ? 'PDF download requires paid access' : ''}
             >
               {isDownloading ? 'Generating PDF...' : 'Download PDF'}
+              {!isPaidUser && paidStatusChecked && <span style={{ marginLeft: '4px', fontSize: '0.8em' }}>🔒</span>}
             </Button>
             <Button
               startIcon={<DownloadIcon />}
               onClick={downloadCSV}
               variant="outlined"
               color="secondary"
+              title={!isPaidUser && paidStatusChecked ? 'CSV download requires paid access' : ''}
             >
               Download CSV
+              {!isPaidUser && paidStatusChecked && <span style={{ marginLeft: '4px', fontSize: '0.8em' }}>🔒</span>}
             </Button>
           </Box>
           
@@ -855,8 +910,10 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
             variant="outlined"
             color="primary"
             size="small"
+            title={!isPaidUser && paidStatusChecked ? 'PDF download requires paid access' : ''}
           >
             {isDownloading ? 'Generating PDF...' : 'Download PDF'}
+            {!isPaidUser && paidStatusChecked && <span style={{ marginLeft: '4px', fontSize: '0.8em' }}>🔒</span>}
           </Button>
           
           {/* Download CSV Button for embed mode */}
@@ -866,8 +923,10 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
             variant="outlined"
             color="secondary"
             size="small"
+            title={!isPaidUser && paidStatusChecked ? 'CSV download requires paid access' : ''}
           >
             Download CSV
+            {!isPaidUser && paidStatusChecked && <span style={{ marginLeft: '4px', fontSize: '0.8em' }}>🔒</span>}
           </Button>
           
           {/* Auto-detected conditions display for embed mode */}
