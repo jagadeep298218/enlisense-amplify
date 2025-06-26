@@ -20,6 +20,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
+import config from '../config';
 import {
     Container,
     Typography,
@@ -80,7 +81,7 @@ const PaidUserManagement = () => {
                 throw new Error('Authentication required');
             }
 
-            const response = await fetch('http://localhost:3000/admin/paid-users', {
+            const response = await fetch(`${config.API_URL}/admin/paid-users`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
 
@@ -135,7 +136,7 @@ const PaidUserManagement = () => {
                 throw new Error('Authentication required');
             }
 
-            const response = await fetch(`http://localhost:3000/admin/paid-users/${encodeURIComponent(username)}`, {
+            const response = await fetch(`${config.API_URL}/admin/paid-users/${encodeURIComponent(username)}`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,

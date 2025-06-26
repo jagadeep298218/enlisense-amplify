@@ -35,6 +35,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Plot from "react-plotly.js";
+import config from "../config";
 import {
   Container,
   Typography,
@@ -210,17 +211,25 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
   const checkPaidStatus = useCallback(async () => {
     try {
       const token = localStorage.getItem("token");
-      if (!token) return false;
+      if (!token) {
+        console.log('No token found for paid status check');
+        return false;
+      }
 
-      const response = await fetch('http://localhost:3000/user/paid-status', {
+      console.log('Checking paid status...');
+      const response = await fetch(`${config.API_URL}/user/paid-status`, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
+      console.log('Paid status response:', response.status);
       if (response.ok) {
         const data = await response.json();
+        console.log('Paid status data:', data);
         setIsPaidUser(data.paid_user || false);
         setPaidStatusChecked(true);
         return data.paid_user || false;
+      } else {
+        console.log('Paid status check failed:', response.status, response.statusText);
       }
       return false;
     } catch (error) {
@@ -536,10 +545,10 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
 
         // Construct API endpoints
         const agpEndpoint = biomarkerType === 'glucose' 
-          ? `http://localhost:3000/user-glucose-agp/${encodeURIComponent(username)}`
-          : `http://localhost:3000/user-cortisol-agp/${encodeURIComponent(username)}`;
+          ? `${config.API_URL}/user-glucose-agp/${encodeURIComponent(username)}`
+          : `${config.API_URL}/user-cortisol-agp/${encodeURIComponent(username)}`;
           
-        const rangesEndpoint = `http://localhost:3000/user-applicable-ranges/${encodeURIComponent(username)}/${biomarkerType}`;
+        const rangesEndpoint = `${config.API_URL}/user-applicable-ranges/${encodeURIComponent(username)}/${biomarkerType}`;
 
         const requestHeaders = { 
           Authorization: `Bearer ${token}`,

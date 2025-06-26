@@ -29,6 +29,7 @@
 
 import React, { useState, useCallback, useMemo } from 'react';
 import axios from 'axios';
+import config from '../config';
 import './Login.css';
 
 /**
@@ -121,7 +122,7 @@ const Login = ({ onLoginSuccess }) => {
 
         try {
             // Configure request with timeout
-            const response = await axios.post('http://localhost:3000/login', {
+            const response = await axios.post(`${config.API_URL}/login`, {
                 username: username.trim(),
                 password
             }, {
