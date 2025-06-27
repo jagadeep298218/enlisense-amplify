@@ -2895,7 +2895,18 @@ app.post('/api/demographic-filter', authenticateToken, async (req, res) => {
 
         const { filters, page = 0, limit = 25 } = req.body;
         
+        // Log the incoming request
+        console.log('Demographic filter request:', {
+            filters,
+            page,
+            limit,
+            user: req.user.username,
+            isAdmin: req.user.admin,
+            isDoctor: req.user.doctor
+        });
+        
         if (!filters || Object.keys(filters).length === 0) {
+            console.log('No filters provided, returning empty result');
             return res.json({ users: [], totalCount: 0 });
         }
 
@@ -3162,16 +3173,188 @@ app.post('/api/demographic-filter/export', authenticateToken, async (req, res) =
         const db = client.db('s3-mongodb-db');
         const collection = db.collection('s3-mongodb-data-entries');
         
-        // Reuse the same query building logic from the filter endpoint
-        // (This would be the same logic as above, just without pagination)
-        const query = {}; // Build the same query as in the filter endpoint
+        // Build MongoDB query from filters (same logic as filter endpoint)
+        const query = {};
+        const andConditions = [];
         
-        // Apply authorization filters (same as filter endpoint)
+        for (const [filterKey, filterValue] of Object.entries(filters)) {
+            if (filterValue === null || filterValue === undefined) continue;
+            
+            switch (filterKey) {
+                case 'device_info.gender':
+                    if (Array.isArray(filterValue) && filterValue.length > 0) {
+                        andConditions.push({ 'device_info.gender': { $in: filterValue } });
+                    }
+                    break;
+                    
+                case 'age_range':
+                    if (Array.isArray(filterValue) && filterValue.length === 2) {
+                        andConditions.push({
+                            $or: [
+                                { 'device_info.age': { $gte: filterValue[0], $lte: filterValue[1] } },
+                                { 'personal_information.age': { $gte: filterValue[0], $lte: filterValue[1] } }
+                            ]
+                        });
+                    }
+                    break;
+                    
+                case 'personal_information.institution':
+                    if (Array.isArray(filterValue) && filterValue.length > 0) {
+                        andConditions.push({ 'personal_information.institution': { $in: filterValue } });
+                    }
+                    break;
+                    
+                case 'personal_information.pregnant':
+                    if (typeof filterValue === 'boolean') {
+                        andConditions.push({
+                            $or: [
+                                { 'personal_information.pregnant': filterValue },
+                                { 'personal_information.Pregnant': filterValue }
+                            ]
+                        });
+                    }
+                    break;
+                    
+                case 'personal_information.diabetes':
+                    if (typeof filterValue === 'boolean') {
+                        andConditions.push({
+                            $or: [
+                                { 'personal_information.diabetes': filterValue },
+                                { 'personal_information.Diabete': filterValue },
+                                { 'personal_information.diabete': filterValue },
+                                { 'personal_information.Diabetes': filterValue }
+                            ]
+                        });
+                    }
+                    break;
+                    
+                case 'personal_information.high_bp':
+                    if (typeof filterValue === 'boolean') {
+                        andConditions.push({
+                            $or: [
+                                { 'personal_information.high_bp': filterValue },
+                                { 'personal_information.High BP': filterValue },
+                                { 'personal_information.High Blood Pressure': filterValue },
+                                { 'personal_information.hypertension': filterValue }
+                            ]
+                        });
+                    }
+                    break;
+                    
+                case 'personal_information.smokes':
+                    if (typeof filterValue === 'boolean') {
+                        andConditions.push({ 'personal_information.smokes': filterValue });
+                    }
+                    break;
+                    
+                case 'personal_information.drinks':
+                    if (typeof filterValue === 'boolean') {
+                        andConditions.push({ 'personal_information.drinks': filterValue });
+                    }
+                    break;
+                    
+                case 'personal_information.diet':
+                    if (Array.isArray(filterValue) && filterValue.length > 0) {
+                        andConditions.push({ 'personal_information.diet': { $in: filterValue } });
+                    }
+                    break;
+                    
+                case 'device_info.deviceID':
+                    if (Array.isArray(filterValue) && filterValue.length > 0) {
+                        andConditions.push({ 'device_info.deviceID': { $in: filterValue } });
+                    }
+                    break;
+                    
+                case 'device_info.arm':
+                    if (Array.isArray(filterValue) && filterValue.length > 0) {
+                        andConditions.push({ 'device_info.arm': { $in: filterValue } });
+                    }
+                    break;
+                    
+                case 'conditions':
+                    if (Array.isArray(filterValue) && filterValue.length > 0) {
+                        const conditionQueries = [];
+                        for (const condition of filterValue) {
+                            switch (condition) {
+                                case 'Type 1 Diabetes':
+                                case 'Type 2 Diabetes':
+                                case 'Gestational Diabetes':
+                                    conditionQueries.push({
+                                        $or: [
+                                            { 'personal_information.diabetes': true },
+                                            { 'personal_information.Diabete': true },
+                                            { 'personal_information.diabete': true }
+                                        ]
+                                    });
+                                    break;
+                                case 'Hypertension':
+                                    conditionQueries.push({
+                                        $or: [
+                                            { 'personal_information.high_bp': true },
+                                            { 'personal_information.High BP': true },
+                                            { 'personal_information.hypertension': true }
+                                        ]
+                                    });
+                                    break;
+                            }
+                        }
+                        if (conditionQueries.length > 0) {
+                            andConditions.push({ $or: conditionQueries });
+                        }
+                    }
+                    break;
+                    
+                case 'custom_search':
+                    if (typeof filterValue === 'string' && filterValue.trim()) {
+                        const searchTerms = filterValue.split(',').map(term => term.trim());
+                        const customQueries = [];
+                        
+                        for (const term of searchTerms) {
+                            const [key, value] = term.split('=').map(s => s.trim());
+                            if (key && value !== undefined) {
+                                let parsedValue = value;
+                                if (value === 'true') parsedValue = true;
+                                else if (value === 'false') parsedValue = false;
+                                else if (!isNaN(value)) parsedValue = parseFloat(value);
+                                
+                                customQueries.push({
+                                    $or: [
+                                        { [`personal_information.${key}`]: parsedValue },
+                                        { [`device_info.${key}`]: parsedValue }
+                                    ]
+                                });
+                            }
+                        }
+                        
+                        if (customQueries.length > 0) {
+                            andConditions.push({ $and: customQueries });
+                        }
+                    }
+                    break;
+            }
+        }
+        
+        // Apply filters
+        if (andConditions.length > 0) {
+            query.$and = andConditions;
+        }
+        
+        // Apply authorization filters
         if (!req.user.admin) {
             if (req.user.doctor && req.user.patients) {
-                query.username = { $in: req.user.patients };
+                const authCondition = { username: { $in: req.user.patients } };
+                if (query.$and) {
+                    query.$and.push(authCondition);
+                } else {
+                    query.$and = [authCondition];
+                }
             } else {
-                query.username = req.user.username;
+                const authCondition = { username: req.user.username };
+                if (query.$and) {
+                    query.$and.push(authCondition);
+                } else {
+                    query.$and = [authCondition];
+                }
             }
         }
         

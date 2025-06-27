@@ -25,6 +25,8 @@ import './App.css';
 
 // Component imports - organized by functionality
 import Login from './components/Login';
+import Layout from './components/Layout';
+import Dashboard from './components/Dashboard';
 import FileTracker from './components/FileTracker';
 import UserVersions from './components/UserVersions';
 import AGPReport from './components/AGPReport';
@@ -103,24 +105,45 @@ function App() {
     <Router>
       <div className="App">       
         <Routes>
-          {/* Public Route - Login/Dashboard */}
+          {/* Public Route - Login */}
+          <Route 
+            path="/login" 
+            element={<Login onLoginSuccess={handleLoginSuccess} />} 
+          />
+          
+          {/* Default Route */}
           <Route 
             path="/" 
             element={
               !isAuthenticated ? (
-                <Login onLoginSuccess={handleLoginSuccess} />
+                <Navigate to="/login" replace />
               ) : (
-                <FileTracker />
+                <Layout>
+                  <Dashboard />
+                </Layout>
               )
             } 
           />
           
-          {/* Protected Routes - All require authentication */}
+          {/* Protected Routes - All require authentication and Layout */}
+          <Route 
+            path="/users" 
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <FileTracker />
+                </Layout>
+              </ProtectedRoute>
+            } 
+          />
+          
           <Route 
             path="/user-versions/:username" 
             element={
               <ProtectedRoute>
-                <UserVersions />
+                <Layout>
+                  <UserVersions />
+                </Layout>
               </ProtectedRoute>
             } 
           />
@@ -129,7 +152,9 @@ function App() {
             path="/user-versions/:username/version/:versionId" 
             element={
               <ProtectedRoute>
-                <UserVersions />
+                <Layout>
+                  <UserVersions />
+                </Layout>
               </ProtectedRoute>
             } 
           />
@@ -138,7 +163,9 @@ function App() {
             path="/agp-report/:username" 
             element={
               <ProtectedRoute>
-                <AGPReport />
+                <Layout>
+                  <AGPReport />
+                </Layout>
               </ProtectedRoute>
             } 
           />
@@ -147,7 +174,9 @@ function App() {
             path="/agp-comparison/:username1/:username2/:biomarkerType" 
             element={
               <ProtectedRoute>
-                <AGPComparison />
+                <Layout>
+                  <AGPComparison />
+                </Layout>
               </ProtectedRoute>
             } 
           />
@@ -156,7 +185,9 @@ function App() {
             path="/admin/biomarker-config" 
             element={
               <ProtectedRoute>
-                <BiomarkerConfig />
+                <Layout>
+                  <BiomarkerConfig />
+                </Layout>
               </ProtectedRoute>
             } 
           />
@@ -165,7 +196,9 @@ function App() {
             path="/population-analysis" 
             element={
               <ProtectedRoute>
-                <PopulationAnalysis />
+                <Layout>
+                  <PopulationAnalysis />
+                </Layout>
               </ProtectedRoute>
             } 
           />
@@ -174,7 +207,9 @@ function App() {
             path="/admin/paid-users" 
             element={
               <ProtectedRoute>
-                <PaidUserManagement />
+                <Layout>
+                  <PaidUserManagement />
+                </Layout>
               </ProtectedRoute>
             } 
           />
@@ -183,7 +218,9 @@ function App() {
             path="/demographic-filter" 
             element={
               <ProtectedRoute>
-                <DemographicFilter />
+                <Layout>
+                  <DemographicFilter />
+                </Layout>
               </ProtectedRoute>
             } 
           />

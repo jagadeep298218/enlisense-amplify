@@ -118,14 +118,38 @@ const DemographicFilter = () => {
     const loadAvailableTags = useCallback(async () => {
         try {
             setLoading(true);
+            setError(null);
             const token = localStorage.getItem('token');
+            
+            if (!token) {
+                throw new Error('No authentication token found');
+            }
+            
+            console.log('Loading available tags from:', `${config.API_URL}/api/demographic-tags`);
+            
             const response = await axios.get(`${config.API_URL}/api/demographic-tags`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
+            
+            console.log('Available tags loaded:', response.data);
             setAvailableTags(response.data);
         } catch (error) {
             console.error('Error loading available tags:', error);
-            setError('Failed to load available demographic tags');
+            console.error('Error details:', {
+                message: error.message,
+                status: error.response?.status,
+                statusText: error.response?.statusText,
+                data: error.response?.data
+            });
+            
+            let errorMessage = 'Failed to load available demographic tags';
+            if (error.response?.status === 401) {
+                errorMessage = 'Authentication failed. Please log in again.';
+            } else if (error.response?.status === 403) {
+                errorMessage = 'You do not have permission to access demographic tags.';
+            }
+            
+            setError(errorMessage);
         } finally {
             setLoading(false);
         }
@@ -150,6 +174,7 @@ const DemographicFilter = () => {
      */
     const applyFilters = useCallback(async () => {
         if (Object.keys(activeFilters).length === 0) {
+            console.log('No filters active, clearing results');
             setFilteredUsers([]);
             setResultCount(0);
             return;
@@ -157,20 +182,55 @@ const DemographicFilter = () => {
 
         try {
             setLoading(true);
+            setError(null);
             const token = localStorage.getItem('token');
-            const response = await axios.post(`${config.API_URL}/api/demographic-filter`, {
+            
+            if (!token) {
+                throw new Error('No authentication token found');
+            }
+
+            console.log('Applying filters:', activeFilters);
+            console.log('API URL:', config.API_URL);
+            
+            const requestData = {
                 filters: activeFilters,
                 page: page,
                 limit: rowsPerPage
-            }, {
+            };
+            
+            console.log('Request data:', requestData);
+            
+            const response = await axios.post(`${config.API_URL}/api/demographic-filter`, requestData, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             
-            setFilteredUsers(response.data.users);
-            setResultCount(response.data.totalCount);
+            console.log('Response received:', response.data);
+            
+            setFilteredUsers(response.data.users || []);
+            setResultCount(response.data.totalCount || 0);
         } catch (error) {
             console.error('Error applying filters:', error);
-            setError('Failed to apply demographic filters');
+            console.error('Error details:', {
+                message: error.message,
+                status: error.response?.status,
+                statusText: error.response?.statusText,
+                data: error.response?.data
+            });
+            
+            let errorMessage = 'Failed to apply demographic filters';
+            if (error.response?.status === 401) {
+                errorMessage = 'Authentication failed. Please log in again.';
+            } else if (error.response?.status === 403) {
+                errorMessage = 'You do not have permission to access demographic filtering.';
+            } else if (error.response?.status === 500) {
+                errorMessage = 'Server error occurred. Please try again later.';
+            } else if (error.message) {
+                errorMessage = error.message;
+            }
+            
+            setError(errorMessage);
+            setFilteredUsers([]);
+            setResultCount(0);
         } finally {
             setLoading(false);
         }
@@ -192,13 +252,17 @@ const DemographicFilter = () => {
      * PURPOSE: Update a specific filter value
      */
     const updateFilter = useCallback((filterKey, value) => {
+        console.log('Updating filter:', filterKey, value);
         setActiveFilters(prev => {
             if (value === null || value === undefined || value === '' || 
                 (Array.isArray(value) && value.length === 0)) {
                 const { [filterKey]: removed, ...rest } = prev;
+                console.log('Removing filter:', filterKey);
                 return rest;
             }
-            return { ...prev, [filterKey]: value };
+            const newFilters = { ...prev, [filterKey]: value };
+            console.log('New filters:', newFilters);
+            return newFilters;
         });
         setPage(0); // Reset to first page when filters change
     }, []);
@@ -208,7 +272,10 @@ const DemographicFilter = () => {
      * PURPOSE: Clear all active filters
      */
     const clearAllFilters = useCallback(() => {
+        console.log('Clearing all filters');
         setActiveFilters({});
+        setFilteredUsers([]);
+        setResultCount(0);
         setPage(0);
     }, []);
 
@@ -226,12 +293,18 @@ const DemographicFilter = () => {
             created: new Date().toISOString()
         };
 
-        const updatedPresets = [...savedPresets, newPreset];
-        setSavedPresets(updatedPresets);
-        localStorage.setItem('demographicFilterPresets', JSON.stringify(updatedPresets));
-        
-        setPresetName('');
-        setSaveDialogOpen(false);
+        try {
+            const updatedPresets = [...savedPresets, newPreset];
+            setSavedPresets(updatedPresets);
+            localStorage.setItem('demographicFilterPresets', JSON.stringify(updatedPresets));
+            
+            setPresetName('');
+            setSaveDialogOpen(false);
+            console.log('Preset saved successfully:', newPreset.name);
+        } catch (error) {
+            console.error('Error saving preset:', error);
+            setError('Failed to save preset');
+        }
     }, [presetName, activeFilters, savedPresets]);
 
     /**
@@ -239,6 +312,7 @@ const DemographicFilter = () => {
      * PURPOSE: Load a saved filter preset
      */
     const loadPreset = useCallback((preset) => {
+        console.log('Loading preset:', preset.name);
         setActiveFilters(preset.filters);
         setPage(0);
     }, []);
@@ -249,6 +323,8 @@ const DemographicFilter = () => {
      */
     const exportResults = useCallback(async () => {
         try {
+            setLoading(true);
+            console.log('Exporting results with filters:', activeFilters);
             const token = localStorage.getItem('token');
             const response = await axios.post(`${config.API_URL}/api/demographic-filter/export`, {
                 filters: activeFilters
@@ -264,9 +340,13 @@ const DemographicFilter = () => {
             document.body.appendChild(link);
             link.click();
             link.remove();
+            window.URL.revokeObjectURL(url);
+            console.log('Export completed successfully');
         } catch (error) {
             console.error('Error exporting results:', error);
             setError('Failed to export results');
+        } finally {
+            setLoading(false);
         }
     }, [activeFilters]);
 
@@ -364,11 +444,17 @@ const DemographicFilter = () => {
     const RangeFilter = ({ label, filterKey, min, max, step = 1, unit = '', description }) => {
         const [value, setValue] = useState(activeFilters[filterKey] || [min, max]);
 
+        // Update local state when activeFilters change (e.g., when clearing filters)
+        useEffect(() => {
+            setValue(activeFilters[filterKey] || [min, max]);
+        }, [activeFilters[filterKey], min, max]);
+
         const handleChange = (event, newValue) => {
             setValue(newValue);
         };
 
         const handleCommit = (event, newValue) => {
+            // Only update if the range is different from default
             updateFilter(filterKey, newValue[0] === min && newValue[1] === max ? null : newValue);
         };
 
