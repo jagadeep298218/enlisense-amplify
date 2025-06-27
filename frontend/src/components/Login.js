@@ -153,8 +153,11 @@ const Login = ({ onLoginSuccess }) => {
             setPassword('');
             
             // Execute success callback
+            console.log('Login successful, calling onLoginSuccess callback with user:', user);
             if (onLoginSuccess && typeof onLoginSuccess === 'function') {
                 onLoginSuccess(user);
+            } else {
+                console.warn('onLoginSuccess callback not provided or not a function');
             }
             
         } catch (error) {

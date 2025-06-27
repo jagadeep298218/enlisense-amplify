@@ -80,7 +80,13 @@ import config from '../config';
 
 const DemographicFilter = () => {
     // State management
-    const [availableTags, setAvailableTags] = useState({});
+    const [availableTags, setAvailableTags] = useState({
+        demographic: [],
+        medical: [],
+        behavioral: [],
+        device: [],
+        custom: []
+    });
     const [activeFilters, setActiveFilters] = useState({});
     const [filteredUsers, setFilteredUsers] = useState([]);
     const [resultCount, setResultCount] = useState(0);
@@ -132,7 +138,13 @@ const DemographicFilter = () => {
             });
             
             console.log('Available tags loaded:', response.data);
-            setAvailableTags(response.data);
+            console.log('Available tags structure:', typeof response.data, Object.keys(response.data || {}));
+            
+            // Ensure availableTags has the expected structure
+            const tags = response.data || {};
+            console.log('Processing tags:', tags);
+            
+            setAvailableTags(tags);
         } catch (error) {
             console.error('Error loading available tags:', error);
             console.error('Error details:', {
@@ -354,30 +366,61 @@ const DemographicFilter = () => {
      * COMPONENT: FilterSection
      * PURPOSE: Render a collapsible filter section
      */
-    const FilterSection = ({ title, sectionKey, icon, children }) => (
-        <Accordion 
-            expanded={expandedSections[sectionKey]}
-            onChange={(e, isExpanded) => setExpandedSections(prev => ({ ...prev, [sectionKey]: isExpanded }))}
-        >
-            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    {icon}
-                    <Typography variant="h6">{title}</Typography>
-                    <Badge 
-                        badgeContent={Object.keys(activeFilters).filter(key => 
-                            availableTags[sectionKey]?.includes(key.split('.')[0])
-                        ).length} 
-                        color="primary"
-                    />
-                </Box>
-            </AccordionSummary>
-            <AccordionDetails>
-                <Grid container spacing={3}>
-                    {children}
-                </Grid>
-            </AccordionDetails>
-        </Accordion>
-    );
+    const FilterSection = ({ title, sectionKey, icon, children }) => {
+        // Helper function to safely check if a filter key belongs to this section
+        const getActiveFiltersForSection = () => {
+            return Object.keys(activeFilters).filter(key => {
+                const tagKey = key.split('.')[0];
+                const sectionTags = availableTags[sectionKey];
+                
+                // Handle different possible structures for availableTags
+                if (Array.isArray(sectionTags)) {
+                    return sectionTags.includes(tagKey);
+                } else if (sectionTags && typeof sectionTags === 'object') {
+                    return Object.keys(sectionTags).includes(tagKey);
+                }
+                
+                // Fallback: check if the key starts with expected patterns for this section
+                switch (sectionKey) {
+                    case 'demographic':
+                        return ['personal_information', 'device_info'].some(prefix => key.startsWith(prefix));
+                    case 'medical':
+                        return ['personal_information'].some(prefix => key.startsWith(prefix));
+                    case 'behavioral':
+                        return ['personal_information'].some(prefix => key.startsWith(prefix));
+                    case 'device':
+                        return ['device_info'].some(prefix => key.startsWith(prefix));
+                    case 'custom':
+                        return key.includes('custom');
+                    default:
+                        return false;
+                }
+            });
+        };
+
+        return (
+            <Accordion 
+                expanded={expandedSections[sectionKey]}
+                onChange={(e, isExpanded) => setExpandedSections(prev => ({ ...prev, [sectionKey]: isExpanded }))}
+            >
+                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        {icon}
+                        <Typography variant="h6">{title}</Typography>
+                        <Badge 
+                            badgeContent={getActiveFiltersForSection().length} 
+                            color="primary"
+                        />
+                    </Box>
+                </AccordionSummary>
+                <AccordionDetails>
+                    <Grid container spacing={3}>
+                        {children}
+                    </Grid>
+                </AccordionDetails>
+            </Accordion>
+        );
+    };
 
     /**
      * COMPONENT: BooleanFilter

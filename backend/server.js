@@ -2538,6 +2538,16 @@ app.get('/user-cortisol-agp/:username', authenticateToken, async (req, res) => {
 app.get('/api/population-analysis', authenticateToken, async (req, res) => {
     try {
         console.log('=== Starting Population Analysis ===');
+        console.log('Query parameters:', req.query);
+        
+        // Parse filters from query parameters
+        const filters = {};
+        Object.entries(req.query).forEach(([key, value]) => {
+            if (value && key !== 'limit' && key !== 'page') {
+                filters[key] = value;
+            }
+        });
+        console.log('Applied filters:', filters);
         
         // Get all users accessible to this user
         const accessibleUsernames = await getAccessibleUsers(req.user);
@@ -2579,6 +2589,45 @@ app.get('/api/population-analysis', authenticateToken, async (req, res) => {
         // Process each accessible user
         for (const userInfo of accessibleUsers) {
             try {
+                // Check if user matches filters before processing glucose data
+                if (Object.keys(filters).length > 0) {
+                    const personalInfo = userInfo.personal_information || {};
+                    const deviceInfo = userInfo.device_info || {};
+                    
+                    let matchesAllFilters = true;
+                    for (const [filterKey, filterValue] of Object.entries(filters)) {
+                        let matches = false;
+                        
+                        if (filterKey === 'gender') {
+                            matches = deviceInfo.gender === filterValue;
+                        } else if (filterKey === 'diabetes') {
+                            const hasDiabetes = personalInfo.Diabete === true || personalInfo.diabete === true || 
+                                             personalInfo.diabetes === true || personalInfo.Diabetes === true;
+                            matches = hasDiabetes === (filterValue === 'true');
+                        } else if (filterKey === 'pregnant') {
+                            const isPregnant = personalInfo.pregnant === true || personalInfo.Pregnant === true;
+                            matches = isPregnant === (filterValue === 'true');
+                        } else if (filterKey === 'smokes') {
+                            matches = personalInfo.smokes === (filterValue === 'true');
+                        } else if (filterKey === 'drinks') {
+                            matches = personalInfo.drinks === (filterValue === 'true');
+                        } else if (filterKey === 'high_bp') {
+                            const hasHighBP = personalInfo['High BP'] === true || personalInfo.hypertension === true;
+                            matches = hasHighBP === (filterValue === 'true');
+                        }
+                        
+                        if (!matches) {
+                            matchesAllFilters = false;
+                            break;
+                        }
+                    }
+                    
+                    if (!matchesAllFilters) {
+                        console.log(`Skipping ${userInfo.username} - doesn't match filters`);
+                        continue; // Skip this user
+                    }
+                }
+                
                 // Get glucose data for this user
                 const glucoseData = [];
                 
@@ -2716,15 +2765,22 @@ app.get('/api/population-analysis', authenticateToken, async (req, res) => {
                 };
                 
                 // Categorize user into populations
-                if (isPregnant) {
-                    console.log(`Adding ${userInfo.username} to pregnancy population`);
-                    populations.pregnancy.push(userData);
-                } else if (hasDiabetes) {
-                    console.log(`Adding ${userInfo.username} to diabetes population`);
-                    populations.diabetes.push(userData);
-                } else {
-                    console.log(`Adding ${userInfo.username} to general population`);
+                // When filters are applied, put all matching users in general population
+                if (Object.keys(filters).length > 0) {
+                    console.log(`Adding ${userInfo.username} to filtered population (general)`);
                     populations.general.push(userData);
+                } else {
+                    // Original categorization when no filters
+                    if (isPregnant) {
+                        console.log(`Adding ${userInfo.username} to pregnancy population`);
+                        populations.pregnancy.push(userData);
+                    } else if (hasDiabetes) {
+                        console.log(`Adding ${userInfo.username} to diabetes population`);
+                        populations.diabetes.push(userData);
+                    } else {
+                        console.log(`Adding ${userInfo.username} to general population`);
+                        populations.general.push(userData);
+                    }
                 }
                 
             } catch (userError) {

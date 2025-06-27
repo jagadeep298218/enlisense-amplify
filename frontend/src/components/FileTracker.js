@@ -52,7 +52,6 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import FilterListIcon from '@mui/icons-material/FilterList';
-import CSVUpload from './CSVUpload';
 import PatientComparison from './PatientComparison';
 
 const FileTracker = () => {
@@ -516,10 +515,7 @@ const FileTracker = () => {
 
             {/* Admin Tools */}
             {user?.admin && (
-                <>
-                    <CSVUpload onUploadComplete={() => window.location.reload()} />
-                    <PatientComparison patients={fileData} />
-                </>
+                <PatientComparison patients={fileData} />
             )}
 
             {/* Data Grid */}

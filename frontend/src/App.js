@@ -25,10 +25,12 @@ import './App.css';
 
 // Component imports - organized by functionality
 import Login from './components/Login';
+import DebugLogin from './components/DebugLogin';
 import Layout from './components/Layout';
-import Dashboard from './components/Dashboard';
 import FileTracker from './components/FileTracker';
 import UserVersions from './components/UserVersions';
+import Settings from './components/Settings';
+import GeneralSettings from './components/GeneralSettings';
 import AGPReport from './components/AGPReport';
 import AGPComparison from './components/AGPComparison';
 import BiomarkerConfig from './components/BiomarkerConfig';
@@ -68,9 +70,16 @@ function App() {
   useEffect(() => {
     try {
       const token = localStorage.getItem('token');
-      if (token) {
+      const user = localStorage.getItem('user');
+      console.log('Checking authentication state:', { token: !!token, user: !!user });
+      
+      if (token && user) {
         // TODO: Add token validation/expiration check here
+        console.log('User authenticated, setting state to true');
         setIsAuthenticated(true);
+      } else {
+        console.log('No valid authentication found');
+        setIsAuthenticated(false);
       }
     } catch (error) {
       console.error('Failed to access localStorage:', error);
@@ -88,6 +97,7 @@ function App() {
    * - [LOW] User parameter validation missing
    */
   const handleLoginSuccess = (user) => {
+    console.log('Login successful, user:', user);
     setIsAuthenticated(true);
     // Note: Token should already be stored by Login component
   };
@@ -98,42 +108,42 @@ function App() {
    * OPTIMIZATION: Memoized to prevent unnecessary re-renders
    */
   const ProtectedRoute = useMemo(() => ({ children }) => {
-    return isAuthenticated ? children : <Navigate to="/" replace />;
+    return isAuthenticated ? children : <Navigate to="/login" replace />;
   }, [isAuthenticated]);
 
   return (
     <Router>
       <div className="App">       
         <Routes>
-          {/* Public Route - Login */}
-          <Route 
-            path="/login" 
-            element={<Login onLoginSuccess={handleLoginSuccess} />} 
-          />
+                      {/* Login Route */}
+            <Route 
+              path="/login" 
+              element={
+                isAuthenticated ? (
+                  <Navigate to="/" replace />
+                ) : (
+                  <Login onLoginSuccess={handleLoginSuccess} />
+                )
+              } 
+            />
+            
+            {/* Debug Login Route */}
+            <Route 
+              path="/debug-login" 
+              element={<DebugLogin onLoginSuccess={handleLoginSuccess} />} 
+            />
           
-          {/* Default Route */}
+          {/* Users & Files Route (Main/Home) */}
           <Route 
             path="/" 
             element={
-              !isAuthenticated ? (
-                <Navigate to="/login" replace />
-              ) : (
-                <Layout>
-                  <Dashboard />
-                </Layout>
-              )
-            } 
-          />
-          
-          {/* Protected Routes - All require authentication and Layout */}
-          <Route 
-            path="/users" 
-            element={
-              <ProtectedRoute>
+              isAuthenticated ? (
                 <Layout>
                   <FileTracker />
                 </Layout>
-              </ProtectedRoute>
+              ) : (
+                <Navigate to="/login" replace />
+              )
             } 
           />
           
@@ -220,6 +230,28 @@ function App() {
               <ProtectedRoute>
                 <Layout>
                   <DemographicFilter />
+                </Layout>
+              </ProtectedRoute>
+            } 
+          />
+          
+          <Route 
+            path="/settings" 
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <GeneralSettings />
+                </Layout>
+              </ProtectedRoute>
+            } 
+          />
+          
+          <Route 
+            path="/settings/upload" 
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <Settings />
                 </Layout>
               </ProtectedRoute>
             } 

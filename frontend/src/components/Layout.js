@@ -17,10 +17,10 @@ import {
     Badge,
     Chip,
     Menu,
-    MenuItem
+    MenuItem,
+    Collapse
 } from '@mui/material';
 import {
-    Dashboard as DashboardIcon,
     People as PeopleIcon,
     Analytics as AnalyticsIcon,
     Settings as SettingsIcon,
@@ -31,7 +31,10 @@ import {
     Logout as LogoutIcon,
     Menu as MenuIcon,
     Notifications as NotificationsIcon,
-    Search as SearchIcon
+    Search as SearchIcon,
+    ExpandLess,
+    ExpandMore,
+    UploadFile as UploadFileIcon
 } from '@mui/icons-material';
 
 const drawerWidth = 260;
@@ -39,6 +42,7 @@ const drawerWidth = 260;
 const Layout = ({ children }) => {
     const [user, setUser] = useState(null);
     const [anchorEl, setAnchorEl] = useState(null);
+    const [settingsOpen, setSettingsOpen] = useState(false);
     const navigate = useNavigate();
     const location = useLocation();
 
@@ -52,6 +56,13 @@ const Layout = ({ children }) => {
             console.warn('Failed to parse stored user data:', error);
         }
     }, []);
+
+    // Auto-expand settings if on a settings page
+    useEffect(() => {
+        if (isSettingsPathActive()) {
+            setSettingsOpen(true);
+        }
+    }, [location.pathname]);
 
     const handleProfileClick = (event) => {
         setAnchorEl(event.currentTarget);
@@ -73,16 +84,10 @@ const Layout = ({ children }) => {
 
     const navigationItems = [
         {
-            text: 'Dashboard',
-            icon: <DashboardIcon />,
-            path: '/',
-            roles: ['admin', 'doctor', 'patient']
-        },
-        {
             text: 'Users & Files',
             icon: <PeopleIcon />,
-            path: '/users',
-            roles: ['admin', 'doctor']
+            path: '/',
+            roles: ['admin', 'doctor', 'patient']
         },
         {
             text: 'Population Analysis',
@@ -101,6 +106,15 @@ const Layout = ({ children }) => {
             icon: <BarChartIcon />,
             path: '/agp-reports',
             roles: ['admin', 'doctor', 'patient']
+        }
+    ];
+
+    const settingsItems = [
+        {
+            text: 'Upload Personal Info',
+            icon: <UploadFileIcon />,
+            path: '/settings/upload',
+            roles: ['admin', 'doctor', 'patient']
         },
         {
             text: 'Biomarker Config',
@@ -115,7 +129,7 @@ const Layout = ({ children }) => {
             roles: ['admin']
         },
         {
-            text: 'Settings',
+            text: 'General Settings',
             icon: <SettingsIcon />,
             path: '/settings',
             roles: ['admin', 'doctor', 'patient']
@@ -136,6 +150,20 @@ const Layout = ({ children }) => {
 
     const handleNavigation = (path) => {
         navigate(path);
+    };
+
+    const handleSettingsToggle = () => {
+        setSettingsOpen(!settingsOpen);
+    };
+
+    const isSettingsPathActive = () => {
+        return settingsItems.some(item => 
+            item.path === location.pathname || 
+            (item.path === '/admin/biomarker-config' && location.pathname === '/admin/biomarker-config') ||
+            (item.path === '/admin/paid-users' && location.pathname === '/admin/paid-users') ||
+            (item.path === '/settings' && location.pathname === '/settings') ||
+            (item.path === '/settings/upload' && location.pathname === '/settings/upload')
+        );
     };
 
     return (
@@ -182,6 +210,7 @@ const Layout = ({ children }) => {
 
                 {/* Navigation */}
                 <List sx={{ pt: 2, px: 2 }}>
+                    {/* Main Navigation Items */}
                     {navigationItems
                         .filter(isNavItemVisible)
                         .map((item) => (
@@ -223,6 +252,94 @@ const Layout = ({ children }) => {
                                 </ListItemButton>
                             </ListItem>
                         ))}
+                    
+                    {/* Settings Section */}
+                    <ListItem disablePadding sx={{ mb: 0.5 }}>
+                        <ListItemButton
+                            onClick={handleSettingsToggle}
+                            sx={{
+                                borderRadius: '8px',
+                                '&:hover': {
+                                    bgcolor: '#f1f5f9',
+                                },
+                                ...(isSettingsPathActive() && {
+                                    bgcolor: '#eff6ff',
+                                    color: '#3b82f6',
+                                    '&:hover': {
+                                        bgcolor: '#eff6ff',
+                                    },
+                                }),
+                            }}
+                        >
+                            <ListItemIcon
+                                sx={{
+                                    color: isSettingsPathActive() ? '#3b82f6' : '#64748b',
+                                    minWidth: '40px'
+                                }}
+                            >
+                                <SettingsIcon />
+                            </ListItemIcon>
+                            <ListItemText
+                                primary="Settings"
+                                sx={{
+                                    '& .MuiListItemText-primary': {
+                                        fontSize: '14px',
+                                        fontWeight: isSettingsPathActive() ? 600 : 400,
+                                        color: isSettingsPathActive() ? '#3b82f6' : '#334155'
+                                    }
+                                }}
+                            />
+                            {settingsOpen ? <ExpandLess /> : <ExpandMore />}
+                        </ListItemButton>
+                    </ListItem>
+
+                    {/* Settings Submenu */}
+                    <Collapse in={settingsOpen} timeout="auto" unmountOnExit>
+                        <List component="div" disablePadding>
+                            {settingsItems
+                                .filter(isNavItemVisible)
+                                .map((item) => (
+                                    <ListItem key={item.text} disablePadding sx={{ mb: 0.5 }}>
+                                        <ListItemButton
+                                            onClick={() => handleNavigation(item.path)}
+                                            sx={{
+                                                borderRadius: '8px',
+                                                pl: 4,
+                                                '&:hover': {
+                                                    bgcolor: '#f1f5f9',
+                                                },
+                                                ...(location.pathname === item.path && {
+                                                    bgcolor: '#eff6ff',
+                                                    color: '#3b82f6',
+                                                    '&:hover': {
+                                                        bgcolor: '#eff6ff',
+                                                    },
+                                                }),
+                                            }}
+                                        >
+                                            <ListItemIcon
+                                                sx={{
+                                                    color: location.pathname === item.path ? '#3b82f6' : '#64748b',
+                                                    minWidth: '40px'
+                                                }}
+                                            >
+                                                {item.icon}
+                                            </ListItemIcon>
+                                            <ListItemText
+                                                primary={item.text}
+                                                sx={{
+                                                    '& .MuiListItemText-primary': {
+                                                        fontSize: '13px',
+                                                        fontWeight: location.pathname === item.path ? 600 : 400,
+                                                        color: location.pathname === item.path ? '#3b82f6' : '#334155'
+                                                    }
+                                                }}
+                                            />
+                                        </ListItemButton>
+                                    </ListItem>
+                                ))}
+                        </List>
+                    </Collapse>
                 </List>
 
                 {/* User Profile at Bottom */}
