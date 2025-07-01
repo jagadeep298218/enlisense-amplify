@@ -39,7 +39,13 @@ import {
   Alert,
   ToggleButton,
   ToggleButtonGroup,
-  Chip
+  Chip,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import CompareIcon from "@mui/icons-material/Compare";
@@ -116,6 +122,11 @@ function AGPComparison() {
 
         const data = await response.json();
         
+        console.log('=== API RESPONSE ===');
+        console.log('Raw API response:', data);
+        console.log('Patient1 data:', data.patient1);
+        console.log('Patient2 data:', data.patient2);
+        
         // Validate that we have data for both patients
         if (!data.patient1 && !data.patient2) {
           throw new Error("No data available for either patient");
@@ -173,7 +184,7 @@ function AGPComparison() {
       );
     }
 
-    const percentiles = patientData.percentages || patientData.percentiles;
+    const percentiles = patientData.data?.percentiles || patientData.percentages || patientData.percentiles;
     if (!percentiles) {
       return (
         <Box sx={{ p: 2, textAlign: 'center' }}>
@@ -262,13 +273,13 @@ function AGPComparison() {
         tickfont: { size: 10 }
       },
       margin: { l: 60, r: 40, t: 40, b: 60 },
-      height: 400,
+      height: 500,
       showlegend: false,
       plot_bgcolor: "white",
       paper_bgcolor: "white",
     };
 
-    return <Plot data={agpData} layout={layout} style={{ width: "100%", height: "100%" }} />;
+    return <Plot data={agpData} layout={layout} style={{ width: "100%", height: "100%" }} config={{ responsive: true }} />;
   }, [biomarkerType, chartConfig]);
 
   /**
@@ -290,7 +301,16 @@ function AGPComparison() {
    * - [LOW] Chart rendering protected with data validation
    */
   const createTimeInRangeChart = useCallback((patientData, title) => {
+    console.log('=== TIME IN RANGE DEBUG ===');
+    console.log('Patient data received:', patientData);
+    console.log('Patient data keys:', patientData ? Object.keys(patientData) : 'null');
+    if (patientData?.data) {
+      console.log('Patient.data keys:', Object.keys(patientData.data));
+      console.log('Patient.data.statistics:', patientData.data.statistics);
+    }
+
     if (!patientData || patientData.error) {
+      console.log('No patient data or error:', patientData?.error);
       return (
         <Box sx={{ p: 2, textAlign: 'center' }}>
           <Alert severity="warning">
@@ -300,8 +320,10 @@ function AGPComparison() {
       );
     }
 
-    const stats = patientData.statistics?.statistics || patientData.statistics;
+    const stats = patientData.data?.statistics || patientData.statistics?.statistics || patientData.statistics;
+    console.log('Extracted stats:', stats);
     if (!stats) {
+      console.log('No stats found');
       return (
         <Box sx={{ p: 2, textAlign: 'center' }}>
           <Alert severity="error">
@@ -312,7 +334,7 @@ function AGPComparison() {
     }
 
     let rangeValues, rangeLabels, rangeColors;
-    
+
     if (biomarkerType === 'glucose') {
       // Safe percentage extraction with fallbacks
       const below54 = stats.percentBelow54 || 0;
@@ -325,16 +347,30 @@ function AGPComparison() {
       rangeLabels = ["Very Low<br><54", "Low<br>54-69", "Target<br>70-180", "High<br>181-250", "Very High<br>>250"];
       rangeColors = ["#dc2626", "#f59e0b", "#10b981", "#f59e0b", "#dc2626"];
     } else {
-      // Cortisol ranges with safe calculations
-      const below5 = stats.percentBelow5 || 0;
-      const between5And10 = Math.max(0, (stats.percentBelow10 || 0) - below5);
-      const targetRange = stats.percentBetween10And30 || 0;
-      const between30And50 = Math.max(0, (stats.percentAbove30 || 0) - (stats.percentAbove50 || 0));
-      const above50 = stats.percentAbove50 || 0;
+      // Cortisol ranges - using backend property names exactly as they are calculated
+      // Backend calculates: percentBelow5 (veryLow), percentBelow10 (low), percentBetween10And30 (normal), percentAbove30 (high), percentAbove50 (veryHigh)
+      // But the actual ranges used are: <2, 2-5, 5-15, 15-20, >20
+      const veryLow = stats.percentBelow5 || 0;  // <2 (backend uses veryLowMax=2 but property is percentBelow5)
+      const low = Math.max(0, (stats.percentBelow10 || 0) - (stats.percentBelow5 || 0)); // 2-5
+      const normal = stats.percentBetween10And30 || 0;  // 5-15 (backend uses normalMin=5, normalMax=15 but property is percentBetween10And30)
+      const high = Math.max(0, (stats.percentAbove30 || 0) - (stats.percentAbove50 || 0)); // 15-20
+      const veryHigh = stats.percentAbove50 || 0; // >20
       
-      rangeValues = [below5, between5And10, targetRange, between30And50, above50];
+      rangeValues = [veryLow, low, normal, high, veryHigh];
       rangeLabels = ["Very Low<br><2", "Low<br>2-5", "Normal<br>5-15", "High<br>15-20", "Very High<br>>20"];
       rangeColors = ["#3b82f6", "#60a5fa", "#10b981", "#f59e0b", "#dc2626"];
+    }
+
+    // If all values are 0, show a message instead of an empty chart
+    const totalValues = rangeValues.reduce((sum, val) => sum + val, 0);
+    if (totalValues === 0) {
+      return (
+        <Box sx={{ p: 2, textAlign: 'center' }}>
+          <Alert severity="info">
+            No time-in-range data available for this patient
+          </Alert>
+        </Box>
+      );
     }
 
     const timeInRangeData = [
@@ -380,7 +416,7 @@ function AGPComparison() {
       paper_bgcolor: "white",
     };
 
-    return <Plot data={timeInRangeData} layout={layout} style={{ width: "100%", height: "100%" }} />;
+    return <Plot data={timeInRangeData} layout={layout} style={{ width: "100%", height: "100%" }} config={{ responsive: true }} />;
   }, [biomarkerType, chartConfig]);
 
   /**
@@ -396,6 +432,176 @@ function AGPComparison() {
       navigate(`/agp-comparison/${username1}/${username2}/${newType}`, { replace: true });
     }
   }, [biomarkerType, navigate, username1, username2]);
+
+  /**
+   * FUNCTION: createStatisticsComparison
+   * PURPOSE: Generate comprehensive statistics comparison table
+   * PARAMETERS:
+   *   - patient1Data: Patient 1's statistics data
+   *   - patient2Data: Patient 2's statistics data
+   * 
+   * PROCESS:
+   * 1. Extract statistics from both patients
+   * 2. Create comparison rows with differences highlighted
+   * 3. Handle biomarker-specific metrics
+   * 4. Format values appropriately for display
+   */
+  const createStatisticsComparison = useCallback((patient1Data, patient2Data) => {
+    const stats1 = patient1Data?.data?.statistics || {};
+    const stats2 = patient2Data?.data?.statistics || {};
+    
+    const unit = biomarkerType === 'glucose' ? 'mg/dL' : 'ng/mL';
+    
+    const formatValue = (value, isPercentage = false, decimals = 1) => {
+      if (value === null || value === undefined || isNaN(value)) return 'N/A';
+      if (isPercentage) return `${value.toFixed(decimals)}%`;
+      return `${value.toFixed(decimals)} ${unit}`;
+    };
+    
+    const calculateDifference = (val1, val2, isPercentage = false) => {
+      if (!val1 || !val2 || isNaN(val1) || isNaN(val2)) return 'N/A';
+      const diff = val2 - val1;
+      const prefix = diff > 0 ? '+' : '';
+      if (isPercentage) return `${prefix}${diff.toFixed(1)}%`;
+      return `${prefix}${diff.toFixed(1)} ${unit}`;
+    };
+
+    const getDifferenceColor = (val1, val2, lowerIsBetter = false) => {
+      if (!val1 || !val2 || isNaN(val1) || isNaN(val2)) return 'text.primary';
+      const diff = val2 - val1;
+      if (Math.abs(diff) < 0.01) return 'text.primary';
+      
+      if (lowerIsBetter) {
+        return diff < 0 ? 'success.main' : 'error.main';
+      } else {
+        return diff > 0 ? 'success.main' : 'error.main';
+      }
+    };
+
+    let comparisonRows = [];
+
+    if (biomarkerType === 'glucose') {
+      comparisonRows = [
+        {
+          metric: 'Average Glucose',
+          patient1: formatValue(stats1.average),
+          patient2: formatValue(stats2.average),
+          difference: calculateDifference(stats1.average, stats2.average),
+          diffColor: getDifferenceColor(stats1.average, stats2.average, false)
+        },
+        {
+          metric: 'Standard Deviation',
+          patient1: formatValue(stats1.standardDeviation),
+          patient2: formatValue(stats2.standardDeviation),
+          difference: calculateDifference(stats1.standardDeviation, stats2.standardDeviation),
+          diffColor: getDifferenceColor(stats1.standardDeviation, stats2.standardDeviation, true)
+        },
+        {
+          metric: 'Time in Range (70-180)',
+          patient1: formatValue(stats1.percentBetween70And180, true),
+          patient2: formatValue(stats2.percentBetween70And180, true),
+          difference: calculateDifference(stats1.percentBetween70And180, stats2.percentBetween70And180, true),
+          diffColor: getDifferenceColor(stats1.percentBetween70And180, stats2.percentBetween70And180, false)
+        },
+        {
+          metric: 'Time Below 70',
+          patient1: formatValue(stats1.percentBelow70, true),
+          patient2: formatValue(stats2.percentBelow70, true),
+          difference: calculateDifference(stats1.percentBelow70, stats2.percentBelow70, true),
+          diffColor: getDifferenceColor(stats1.percentBelow70, stats2.percentBelow70, true)
+        },
+        {
+          metric: 'Time Above 180',
+          patient1: formatValue(stats1.percentAbove180, true),
+          patient2: formatValue(stats2.percentAbove180, true),
+          difference: calculateDifference(stats1.percentAbove180, stats2.percentAbove180, true),
+          diffColor: getDifferenceColor(stats1.percentAbove180, stats2.percentAbove180, true)
+        },
+        {
+          metric: 'Time Above 250',
+          patient1: formatValue(stats1.percentAbove250, true),
+          patient2: formatValue(stats2.percentAbove250, true),
+          difference: calculateDifference(stats1.percentAbove250, stats2.percentAbove250, true),
+          diffColor: getDifferenceColor(stats1.percentAbove250, stats2.percentAbove250, true)
+        },
+        {
+          metric: 'Coefficient of Variation',
+          patient1: formatValue(stats1.coefficientOfVariationPercentage, true),
+          patient2: formatValue(stats2.coefficientOfVariationPercentage, true),
+          difference: calculateDifference(stats1.coefficientOfVariationPercentage, stats2.coefficientOfVariationPercentage, true),
+          diffColor: getDifferenceColor(stats1.coefficientOfVariationPercentage, stats2.coefficientOfVariationPercentage, true)
+        }
+      ];
+    } else {
+      // Cortisol metrics
+      comparisonRows = [
+        {
+          metric: 'Average Cortisol',
+          patient1: formatValue(stats1.average),
+          patient2: formatValue(stats2.average),
+          difference: calculateDifference(stats1.average, stats2.average),
+          diffColor: getDifferenceColor(stats1.average, stats2.average, false)
+        },
+        {
+          metric: 'Standard Deviation',
+          patient1: formatValue(stats1.standardDeviation),
+          patient2: formatValue(stats2.standardDeviation),
+          difference: calculateDifference(stats1.standardDeviation, stats2.standardDeviation),
+          diffColor: getDifferenceColor(stats1.standardDeviation, stats2.standardDeviation, false)
+        },
+        {
+          metric: 'Normal Range (5-15)',
+          patient1: formatValue(stats1.percentBetween10And30, true),
+          patient2: formatValue(stats2.percentBetween10And30, true),
+          difference: calculateDifference(stats1.percentBetween10And30, stats2.percentBetween10And30, true),
+          diffColor: getDifferenceColor(stats1.percentBetween10And30, stats2.percentBetween10And30, false)
+        },
+        {
+          metric: 'Below Normal Range',
+          patient1: formatValue(stats1.percentBelow10, true),
+          patient2: formatValue(stats2.percentBelow10, true),
+          difference: calculateDifference(stats1.percentBelow10, stats2.percentBelow10, true),
+          diffColor: getDifferenceColor(stats1.percentBelow10, stats2.percentBelow10, true)
+        },
+        {
+          metric: 'Above Normal Range',
+          patient1: formatValue(stats1.percentAbove30, true),
+          patient2: formatValue(stats2.percentAbove30, true),
+          difference: calculateDifference(stats1.percentAbove30, stats2.percentAbove30, true),
+          diffColor: getDifferenceColor(stats1.percentAbove30, stats2.percentAbove30, true)
+        }
+      ];
+    }
+
+    return (
+      <TableContainer>
+        <Table>
+          <TableHead>
+            <TableRow>
+              <TableCell><strong>Metric</strong></TableCell>
+              <TableCell align="center"><strong>{username1}</strong></TableCell>
+              <TableCell align="center"><strong>{username2}</strong></TableCell>
+              <TableCell align="center"><strong>Difference</strong></TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {comparisonRows.map((row, index) => (
+              <TableRow key={index} sx={{ '&:nth-of-type(odd)': { bgcolor: 'action.hover' } }}>
+                <TableCell component="th" scope="row">
+                  {row.metric}
+                </TableCell>
+                <TableCell align="center">{row.patient1}</TableCell>
+                <TableCell align="center">{row.patient2}</TableCell>
+                <TableCell align="center" sx={{ color: row.diffColor, fontWeight: 'medium' }}>
+                  {row.difference}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
+    );
+  }, [biomarkerType, username1, username2]);
 
   // Loading state
   if (loading) {
@@ -452,6 +658,11 @@ function AGPComparison() {
 
   const { patient1, patient2 } = comparisonData;
 
+  console.log('=== AGP COMPARISON RENDER ===');
+  console.log('Comparison data:', comparisonData);
+  console.log('Patient 1:', patient1);
+  console.log('Patient 2:', patient2);
+
   return (
     <Container maxWidth="xl" sx={{ py: 4 }}>
       {/* Header Controls */}
@@ -492,54 +703,66 @@ function AGPComparison() {
       </Paper>
 
       {/* AGP Charts Comparison */}
-      <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
+      <Grid container spacing={2} sx={{ mb: 4 }}>
+        <Grid item xs={12} lg={6}>
+          <Card sx={{ height: '100%', overflow: 'hidden' }}>
+            <CardContent sx={{ p: 2 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
                 <PersonIcon color="primary" />
                 <Typography variant="h6">{username1}</Typography>
                 <Chip label="Patient 1" size="small" color="primary" />
               </Box>
-              {createAGPChart(patient1, `${username1} - AGP`)}
+              <Box sx={{ width: '100%', minHeight: 500, overflow: 'auto' }}>
+                {createAGPChart(patient1, `${username1} - AGP`)}
+              </Box>
             </CardContent>
           </Card>
         </Grid>
         
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
+        <Grid item xs={12} lg={6}>
+          <Card sx={{ height: '100%', overflow: 'hidden' }}>
+            <CardContent sx={{ p: 2 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
                 <PersonIcon color="secondary" />
                 <Typography variant="h6">{username2}</Typography>
                 <Chip label="Patient 2" size="small" color="secondary" />
               </Box>
-              {createAGPChart(patient2, `${username2} - AGP`)}
+              <Box sx={{ width: '100%', minHeight: 500, overflow: 'auto' }}>
+                {createAGPChart(patient2, `${username2} - AGP`)}
+              </Box>
             </CardContent>
           </Card>
         </Grid>
       </Grid>
 
       {/* Time in Range Comparison */}
-      <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                {username1} - Time in Range
-              </Typography>
-              {createTimeInRangeChart(patient1, `${username1} - Time in Range`)}
+      <Grid container spacing={2} sx={{ mb: 4 }}>
+        <Grid item xs={12} lg={6}>
+          <Card sx={{ height: '100%' }}>
+            <CardContent sx={{ p: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                <PersonIcon color="primary" />
+                <Typography variant="h6">{username1} - Time in Range</Typography>
+                <Chip label="Patient 1" size="small" color="primary" />
+              </Box>
+              <Box sx={{ width: '100%', minHeight: 350 }}>
+                {createTimeInRangeChart(patient1, `${username1} - Time in Range`)}
+              </Box>
             </CardContent>
           </Card>
         </Grid>
         
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                {username2} - Time in Range
-              </Typography>
-              {createTimeInRangeChart(patient2, `${username2} - Time in Range`)}
+        <Grid item xs={12} lg={6}>
+          <Card sx={{ height: '100%' }}>
+            <CardContent sx={{ p: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                <PersonIcon color="secondary" />
+                <Typography variant="h6">{username2} - Time in Range</Typography>
+                <Chip label="Patient 2" size="small" color="secondary" />
+              </Box>
+              <Box sx={{ width: '100%', minHeight: 350 }}>
+                {createTimeInRangeChart(patient2, `${username2} - Time in Range`)}
+              </Box>
             </CardContent>
           </Card>
         </Grid>
@@ -550,11 +773,11 @@ function AGPComparison() {
         <Typography variant="h6" gutterBottom>
           Statistics Comparison
         </Typography>
-        
-        {/* Implementation of statistics comparison would go here */}
-        <Alert severity="info">
-          Statistics comparison table implementation pending
-        </Alert>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          Side-by-side comparison of key {biomarkerType === 'glucose' ? 'glucose' : 'cortisol'} metrics. 
+          Green indicates improvement, red indicates deterioration compared to Patient 1.
+        </Typography>
+        {createStatisticsComparison(patient1, patient2)}
       </Paper>
     </Container>
   );

@@ -57,16 +57,21 @@ const GeneralSettings = () => {
     };
 
     return (
-        <Container maxWidth="lg" sx={{ py: 4 }}>
-            <Box sx={{ mb: 4 }}>
-                <Typography variant="h4" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                    <SettingsIcon sx={{ fontSize: 32, color: 'primary.main' }} />
-                    General Settings
-                </Typography>
-                <Typography variant="body1" color="text.secondary">
-                    Configure your application preferences and settings.
-                </Typography>
-            </Box>
+        <Container maxWidth="xl" sx={{ py: 4 }}>
+            {/* Page Header */}
+            <Paper sx={{ p: 4, mb: 4, bgcolor: 'primary.main', color: 'white' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <SettingsIcon sx={{ fontSize: 40 }} />
+                    <Box>
+                        <Typography variant="h4" fontWeight="bold">
+                            General Settings
+                        </Typography>
+                        <Typography variant="h6" sx={{ opacity: 0.9, mt: 1 }}>
+                            Configure your application preferences and settings
+                        </Typography>
+                    </Box>
+                </Box>
+            </Paper>
 
             {saved && (
                 <Alert severity="success" sx={{ mb: 3 }}>

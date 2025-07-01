@@ -11,16 +11,21 @@ const Settings = () => {
     };
 
     return (
-        <Container maxWidth="lg" sx={{ py: 4 }}>
-            <Box sx={{ mb: 4 }}>
-                <Typography variant="h4" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                    <UploadIcon sx={{ fontSize: 32, color: 'primary.main' }} />
-                    Upload Personal Information
-                </Typography>
-                <Typography variant="body1" color="text.secondary">
-                    Upload and manage personal information data through CSV files.
-                </Typography>
-            </Box>
+        <Container maxWidth="xl" sx={{ py: 4 }}>
+            {/* Page Header */}
+            <Paper sx={{ p: 4, mb: 4, bgcolor: 'primary.main', color: 'white' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <UploadIcon sx={{ fontSize: 40 }} />
+                    <Box>
+                        <Typography variant="h4" fontWeight="bold">
+                            Upload Personal Information
+                        </Typography>
+                        <Typography variant="h6" sx={{ opacity: 0.9, mt: 1 }}>
+                            Upload and manage personal information data through CSV files
+                        </Typography>
+                    </Box>
+                </Box>
+            </Paper>
 
             <CSVUpload onUploadComplete={handleUploadComplete} />
 

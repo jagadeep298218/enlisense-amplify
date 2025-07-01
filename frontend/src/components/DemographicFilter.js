@@ -60,7 +60,8 @@ import {
     CardActions,
     Tooltip,
     Badge,
-    LinearProgress
+    LinearProgress,
+    Container
 } from '@mui/material';
 import {
     ExpandMore as ExpandMoreIcon,
@@ -530,16 +531,21 @@ const DemographicFilter = () => {
     };
 
     return (
-        <Box sx={{ p: 3 }}>
-            {/* Header */}
-            <Box sx={{ mb: 4 }}>
-                <Typography variant="h4" component="h1" gutterBottom>
-                    Demographic Filter
-                </Typography>
-                <Typography variant="subtitle1" color="text.secondary">
-                    Filter and analyze user populations based on demographic, medical, and behavioral tags
-                </Typography>
-            </Box>
+        <Container maxWidth="xl" sx={{ py: 4 }}>
+            {/* Page Header */}
+            <Paper sx={{ p: 4, mb: 4, bgcolor: 'primary.main', color: 'white' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <FilterIcon sx={{ fontSize: 40 }} />
+                    <Box>
+                        <Typography variant="h4" fontWeight="bold">
+                            Demographic Filter
+                        </Typography>
+                        <Typography variant="h6" sx={{ opacity: 0.9, mt: 1 }}>
+                            Filter and analyze user populations based on demographic, medical, and behavioral tags
+                        </Typography>
+                    </Box>
+                </Box>
+            </Paper>
 
             {error && (
                 <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
@@ -880,7 +886,7 @@ const DemographicFilter = () => {
                     </Button>
                 </DialogActions>
             </Dialog>
-        </Box>
+        </Container>
     );
 };
 

@@ -48,10 +48,12 @@ import {
   Alert,
   Divider,
   ToggleButton,
-  ToggleButtonGroup
+  ToggleButtonGroup,
+  Paper
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import DownloadIcon from "@mui/icons-material/Download";
+import AssessmentIcon from "@mui/icons-material/Assessment";
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 
@@ -838,7 +840,56 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
       <Box ref={reportRef}>
       {/* Header - only shown when not in embed mode */}
       {!embedMode && (
-        <Box sx={{ mb: 4 }}>
+        <Container maxWidth="xl" sx={{ py: 4 }}>
+          {/* Page Header */}
+          <Paper sx={{ p: 4, mb: 4, bgcolor: 'primary.main', color: 'white' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <AssessmentIcon sx={{ fontSize: 40 }} />
+              <Box sx={{ flex: 1 }}>
+                <Typography variant="h4" fontWeight="bold">
+                  {biomarkerType === 'glucose' ? 'AGP Report: Continuous Glucose Monitoring' : 'ACP Report: Continuous Cortisol Monitoring'}
+                </Typography>
+                <Typography variant="h6" sx={{ opacity: 0.9, mt: 1 }}>
+                  {patientData.patientInfo ? 
+                    `Patient: ${patientData.patientInfo.name} | Age: ${patientData.patientInfo.age} | Gender: ${patientData.patientInfo.gender}` :
+                    'Advanced ambulatory glucose profile analysis and reporting'
+                  }
+                </Typography>
+              </Box>
+              <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }} className="pdf-hide">
+                <ToggleButtonGroup
+                  value={biomarkerType}
+                  exclusive
+                  onChange={(event, newBiomarker) => {
+                    if (newBiomarker !== null) {
+                      setBiomarkerType(newBiomarker);
+                    }
+                  }}
+                  aria-label="biomarker type"
+                  size="small"
+                  sx={{ bgcolor: 'rgba(255,255,255,0.1)' }}
+                >
+                  <ToggleButton value="glucose" aria-label="glucose" sx={{ color: 'white' }}>
+                    Glucose
+                  </ToggleButton>
+                  <ToggleButton value="cortisol" aria-label="cortisol" sx={{ color: 'white' }}>
+                    Cortisol
+                  </ToggleButton>
+                </ToggleButtonGroup>
+                
+                {/* Auto-detected conditions display */}
+                {applicableRanges && !applicableRanges.useDefault && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2, py: 1, bgcolor: 'rgba(255,255,255,0.2)', borderRadius: 1 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                      Auto-detected: {applicableRanges.configsUsed?.join(', ') || 'Custom ranges'}
+                    </Typography>
+                  </Box>
+                )}
+              </Box>
+            </Box>
+          </Paper>
+          
+          {/* Action Buttons */}
           <Box sx={{ display: 'flex', gap: 2, mb: 2 }} className="pdf-hide">
             <Button
               startIcon={<ArrowBackIcon />}
@@ -869,43 +920,6 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
             </Button>
           </Box>
           
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-            <Typography variant="h4" component="h1" fontWeight="bold">
-              {biomarkerType === 'glucose' ? 'AGP Report: Continuous Glucose Monitoring' : 'ACP Report: Continuous Cortisol Monitoring'}
-            </Typography>
-            
-            <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-              <ToggleButtonGroup
-                value={biomarkerType}
-                exclusive
-                onChange={(event, newBiomarker) => {
-                  if (newBiomarker !== null) {
-                    setBiomarkerType(newBiomarker);
-                  }
-                }}
-                aria-label="biomarker type"
-                size="small"
-                className="pdf-hide"
-              >
-                <ToggleButton value="glucose" aria-label="glucose">
-                  Glucose
-                </ToggleButton>
-                <ToggleButton value="cortisol" aria-label="cortisol">
-                  Cortisol
-                </ToggleButton>
-              </ToggleButtonGroup>
-              
-              {/* Auto-detected conditions display */}
-              {applicableRanges && !applicableRanges.useDefault && (
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2, py: 1, bgcolor: 'info.main', color: 'white', borderRadius: 1 }}>
-                  <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
-                    Auto-detected: {applicableRanges.configsUsed?.join(', ') || 'Custom ranges'}
-                  </Typography>
-                </Box>
-              )}
-            </Box>
-          </Box>
-          
           {patientData.patientInfo && (
             <Typography variant="h6" color="textSecondary" gutterBottom>
               Patient: {patientData.patientInfo.name} | Age: {patientData.patientInfo.age} | 
@@ -928,7 +942,7 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
               {rangeMessage}
             </Alert>
           )}
-        </Box>
+        </Container>
       )}
       
       {/* Biomarker toggle for embed mode */}

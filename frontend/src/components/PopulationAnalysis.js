@@ -481,13 +481,21 @@ const PopulationAnalysis = () => {
     }
 
     return (
-        <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
-            <Typography variant="h4" component="h1" gutterBottom align="center" fontWeight="bold">
-                Population Analysis Dashboard
-            </Typography>
-            <Typography variant="subtitle1" align="center" color="text.secondary" gutterBottom sx={{ mb: 4 }}>
-                Time in Range Analysis by Population Groups - {getFilteredUserCount()}
-            </Typography>
+        <Container maxWidth="xl" sx={{ py: 4 }}>
+            {/* Page Header */}
+            <Paper sx={{ p: 4, mb: 4, bgcolor: 'primary.main', color: 'white' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <AnalyticsIcon sx={{ fontSize: 40 }} />
+                    <Box>
+                        <Typography variant="h4" fontWeight="bold">
+                            Population Analysis Dashboard
+                        </Typography>
+                        <Typography variant="h6" sx={{ opacity: 0.9, mt: 1 }}>
+                            Time in Range Analysis by Population Groups - {getFilteredUserCount()}
+                        </Typography>
+                    </Box>
+                </Box>
+            </Paper>
 
             {/* Filter Panel */}
             <Paper sx={{ mb: 4, p: 2 }}>

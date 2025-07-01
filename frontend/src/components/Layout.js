@@ -3,18 +3,13 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import {
     Box,
     Drawer,
-    AppBar,
-    Toolbar,
     List,
     Typography,
-    Divider,
-    IconButton,
     ListItem,
     ListItemButton,
     ListItemIcon,
     ListItemText,
     Avatar,
-    Badge,
     Chip,
     Menu,
     MenuItem,
@@ -24,17 +19,13 @@ import {
     People as PeopleIcon,
     Analytics as AnalyticsIcon,
     Settings as SettingsIcon,
-    FilterList as FilterListIcon,
-    BarChart as BarChartIcon,
     AccountBalance as AccountBalanceIcon,
     MedicalServices as MedicalServicesIcon,
     Logout as LogoutIcon,
-    Menu as MenuIcon,
-    Notifications as NotificationsIcon,
-    Search as SearchIcon,
     ExpandLess,
     ExpandMore,
-    UploadFile as UploadFileIcon
+    UploadFile as UploadFileIcon,
+    Compare as CompareIcon
 } from '@mui/icons-material';
 
 const drawerWidth = 260;
@@ -96,16 +87,10 @@ const Layout = ({ children }) => {
             roles: ['admin', 'doctor']
         },
         {
-            text: 'Demographic Filter',
-            icon: <FilterListIcon />,
-            path: '/demographic-filter',
+            text: 'Compare AGP Reports',
+            icon: <CompareIcon />,
+            path: '/compare-agp',
             roles: ['admin', 'doctor']
-        },
-        {
-            text: 'AGP Reports',
-            icon: <BarChartIcon />,
-            path: '/agp-reports',
-            roles: ['admin', 'doctor', 'patient']
         }
     ];
 

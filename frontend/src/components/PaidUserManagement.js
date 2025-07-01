@@ -43,9 +43,6 @@ import {
     DialogTitle,
     DialogContent,
     DialogActions,
-    AppBar,
-    Toolbar,
-    IconButton,
     FormControlLabel
 } from '@mui/material';
 import {
@@ -200,33 +197,53 @@ const PaidUserManagement = () => {
     }
 
     return (
-        <Container maxWidth="lg" sx={{ mt: 2, mb: 4 }}>
-            {/* Header */}
-            <AppBar position="static" color="default" elevation={0} sx={{ mb: 3 }}>
-                <Toolbar>
-                    <IconButton
-                        edge="start"
-                        color="inherit"
-                        onClick={() => navigate('/')}
-                        sx={{ mr: 2 }}
-                    >
-                        <ArrowBackIcon />
-                    </IconButton>
-                    
-                    <Typography variant="h6" sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <PaidIcon />
-                        Paid User Management
-                    </Typography>
-                    
-                    <IconButton
-                        color="inherit"
-                        onClick={fetchUsers}
-                        title="Refresh"
-                    >
-                        <RefreshIcon />
-                    </IconButton>
-                </Toolbar>
-            </AppBar>
+        <Container maxWidth="xl" sx={{ py: 4 }}>
+            {/* Page Header */}
+            <Paper sx={{ p: 4, mb: 4, bgcolor: 'primary.main', color: 'white' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <PaidIcon sx={{ fontSize: 40 }} />
+                    <Box sx={{ flex: 1 }}>
+                        <Typography variant="h4" fontWeight="bold">
+                            Paid User Management
+                        </Typography>
+                        <Typography variant="h6" sx={{ opacity: 0.9, mt: 1 }}>
+                            Manage user payment status and access permissions
+                        </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', gap: 2 }} className="pdf-hide">
+                        <Button
+                            startIcon={<ArrowBackIcon />}
+                            onClick={() => navigate('/')}
+                            variant="outlined"
+                            sx={{ 
+                                borderColor: 'rgba(255,255,255,0.3)', 
+                                color: 'white',
+                                '&:hover': {
+                                    borderColor: 'rgba(255,255,255,0.5)',
+                                    bgcolor: 'rgba(255,255,255,0.1)'
+                                }
+                            }}
+                        >
+                            Back
+                        </Button>
+                        <Button
+                            startIcon={<RefreshIcon />}
+                            onClick={fetchUsers}
+                            variant="outlined"
+                            sx={{ 
+                                borderColor: 'rgba(255,255,255,0.3)', 
+                                color: 'white',
+                                '&:hover': {
+                                    borderColor: 'rgba(255,255,255,0.5)',
+                                    bgcolor: 'rgba(255,255,255,0.1)'
+                                }
+                            }}
+                        >
+                            Refresh
+                        </Button>
+                    </Box>
+                </Box>
+            </Paper>
 
             {error && (
                 <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>

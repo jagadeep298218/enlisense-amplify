@@ -6,7 +6,9 @@ import {
     Card,
     CardContent,
     Avatar,
-    Chip
+    Chip,
+    Container,
+    Paper
 } from '@mui/material';
 import {
     Favorite as HeartIcon,
@@ -15,7 +17,8 @@ import {
     TrendingUp as TrendingUpIcon,
     TrendingDown as TrendingDownIcon,
     MedicalServices as MedicalIcon,
-    Healing as HealingIcon
+    Healing as HealingIcon,
+    Dashboard as DashboardIcon
 } from '@mui/icons-material';
 import {
     ResponsiveContainer,
@@ -178,15 +181,21 @@ const Dashboard = () => {
     };
 
     return (
-        <Box sx={{ p: 4 }}>
-            <Box sx={{ mb: 4 }}>
-                <Typography variant="h4" sx={{ fontWeight: 700, color: '#1e293b', mb: 1 }}>
-                    Dashboard
-                </Typography>
-                <Typography variant="body1" sx={{ color: '#64748b' }}>
-                    Welcome back! Here's what's happening with your health data.
-                </Typography>
-            </Box>
+        <Container maxWidth="xl" sx={{ py: 4 }}>
+            {/* Page Header */}
+            <Paper sx={{ p: 4, mb: 4, bgcolor: 'primary.main', color: 'white' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <DashboardIcon sx={{ fontSize: 40 }} />
+                    <Box>
+                        <Typography variant="h4" fontWeight="bold">
+                            Dashboard
+                        </Typography>
+                        <Typography variant="h6" sx={{ opacity: 0.9, mt: 1 }}>
+                            Welcome back! Here's what's happening with your health data.
+                        </Typography>
+                    </Box>
+                </Box>
+            </Paper>
 
             <Grid container spacing={3}>
                 <Grid item xs={12} lg={8}>
@@ -422,7 +431,7 @@ const Dashboard = () => {
                     </Grid>
                 </Grid>
             </Grid>
-        </Box>
+        </Container>
     );
 };
 

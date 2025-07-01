@@ -46,13 +46,14 @@ import LogoutIcon from '@mui/icons-material/Logout';
 import DownloadIcon from '@mui/icons-material/Download';
 import AnalyticsIcon from '@mui/icons-material/Analytics';
 import PersonIcon from '@mui/icons-material/Person';
+import PeopleIcon from '@mui/icons-material/People';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import MedicalServicesIcon from '@mui/icons-material/MedicalServices';
 import SettingsIcon from '@mui/icons-material/Settings';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import FilterListIcon from '@mui/icons-material/FilterList';
-import PatientComparison from './PatientComparison';
+
 
 const FileTracker = () => {
     const [fileData, setFileData] = useState([]);
@@ -430,93 +431,23 @@ const FileTracker = () => {
     }
 
     return (
-        <Container maxWidth={false} sx={{ mb: 4, px: 2 }}>
-            {/* Header */}
-            <AppBar position="static" color="default" elevation={0} sx={{ mb: 3 }}>
-                <Toolbar>
-                    <Typography variant="h6" sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <PersonIcon />
-                        User Management Dashboard
-                    </Typography>
-                    
-                    {user && (
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                {getUserTypeIcon(user)}
-                                <Box>
-                                    <Typography variant="body2" color="text.primary">
-                                        {user.name || user.username}
-                                    </Typography>
-                                    <Typography variant="caption" color="text.secondary">
-                                        {getUserTypeDisplay(user)}
-                                    </Typography>
-                                </Box>
-                            </Box>
-                            
-                            {(user.admin || user.doctor) && (
-                                <>
-                                    <IconButton
-                                        color="inherit"
-                                        onClick={() => navigate('/demographic-filter')}
-                                        title="Demographic Filter"
-                                    >
-                                        <FilterListIcon />
-                                    </IconButton>
-                                </>
-                            )}
-                            
-                            {user.admin && (
-                                <>
-                                    <IconButton
-                                        color="inherit"
-                                        onClick={handleDownloadCSV}
-                                        title="Download CSV"
-                                    >
-                                        <DownloadIcon />
-                                    </IconButton>
-                                    
-                                    <IconButton
-                                        color="inherit"
-                                        onClick={() => navigate('/population-analysis')}
-                                        title="Population Analysis"
-                                    >
-                                        <AnalyticsIcon />
-                                    </IconButton>
-                                    
-                                    <IconButton
-                                        color="inherit"
-                                        onClick={() => navigate('/biomarker-config')}
-                                        title="Biomarker Configuration"
-                                    >
-                                        <SettingsIcon />
-                                    </IconButton>
-                                    
-                                    <IconButton
-                                        color="inherit"
-                                        onClick={() => navigate('/admin/paid-users')}
-                                        title="Paid User Management"
-                                    >
-                                        <AccountBalanceIcon />
-                                    </IconButton>
-                                </>
-                            )}
-                            
-                            <IconButton
-                                color="inherit"
-                                onClick={handleLogout}
-                                title="Logout"
-                            >
-                                <LogoutIcon />
-                            </IconButton>
-                        </Box>
-                    )}
-                </Toolbar>
-            </AppBar>
+        <Container maxWidth="xl" sx={{ py: 4 }}>
+            {/* Page Header */}
+            <Paper sx={{ p: 4, mb: 4, bgcolor: 'primary.main', color: 'white' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <PeopleIcon sx={{ fontSize: 40 }} />
+                    <Box>
+                        <Typography variant="h4" fontWeight="bold">
+                            Users & Files
+                        </Typography>
+                        <Typography variant="h6" sx={{ opacity: 0.9, mt: 1 }}>
+                            Manage user data, file uploads, and patient information
+                        </Typography>
+                    </Box>
+                </Box>
+            </Paper>
 
-            {/* Admin Tools */}
-            {user?.admin && (
-                <PatientComparison patients={fileData} />
-            )}
+
 
             {/* Data Grid */}
             <Paper sx={{ height: 600, width: '100%' }}>
@@ -540,19 +471,33 @@ const FileTracker = () => {
                 />
             </Paper>
 
-            {/* Summary Stats */}
-            <Box sx={{ mt: 3, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-                <Chip 
-                    icon={<PersonIcon />} 
-                    label={`Total Users: ${fileData.length}`} 
-                    variant="outlined" 
-                />
-                <Chip 
-                    icon={<BarChartIcon />} 
-                    label={`Active Records: ${fileData.filter(f => f.etag).length}`} 
-                    color="success"
-                    variant="outlined" 
-                />
+            {/* Summary Stats and Actions */}
+            <Box sx={{ mt: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
+                <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                    <Chip 
+                        icon={<PersonIcon />} 
+                        label={`Total Users: ${fileData.length}`} 
+                        variant="outlined" 
+                    />
+                    <Chip 
+                        icon={<BarChartIcon />} 
+                        label={`Active Records: ${fileData.filter(f => f.etag).length}`} 
+                        color="success"
+                        variant="outlined" 
+                    />
+                </Box>
+                
+                {/* Download CSV Button */}
+                {user?.admin && (
+                    <Button
+                        variant="contained"
+                        startIcon={<DownloadIcon />}
+                        onClick={handleDownloadCSV}
+                        color="primary"
+                    >
+                        Download CSV
+                    </Button>
+                )}
             </Box>
         </Container>
     );

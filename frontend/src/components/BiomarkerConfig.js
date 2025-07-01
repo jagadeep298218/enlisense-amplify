@@ -142,22 +142,26 @@ const BiomarkerConfig = () => {
 
     return (
         <Container maxWidth="xl" sx={{ py: 4 }}>
-            <Paper sx={{ p: 4 }}>
-                <Box sx={{ mb: 4 }}>
-                    <Typography variant="h4" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <VisibilityIcon color="primary" />
-                        Biomarker Range Configuration (Read-Only)
-                    </Typography>
-                    <Typography variant="body1" color="text.secondary">
-                        View biomarker ranges for glucose and cortisol as configured in the database. 
-                        These ranges are automatically sourced from the s3-mongodb-csv2ranges collection 
-                        and are used in AGP reports and analysis.
-                    </Typography>
-                    <Alert severity="info" sx={{ mt: 2 }}>
-                        <strong>Note:</strong> Ranges are read-only and automatically sourced from the database. 
-                        To modify ranges, please update the s3-mongodb-csv2ranges collection directly.
-                    </Alert>
+            {/* Page Header */}
+            <Paper sx={{ p: 4, mb: 4, bgcolor: 'primary.main', color: 'white' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <VisibilityIcon sx={{ fontSize: 40 }} />
+                    <Box>
+                        <Typography variant="h4" fontWeight="bold">
+                            Biomarker Range Configuration
+                        </Typography>
+                        <Typography variant="h6" sx={{ opacity: 0.9, mt: 1 }}>
+                            View and manage biomarker ranges for glucose and cortisol analysis
+                        </Typography>
+                    </Box>
                 </Box>
+            </Paper>
+            
+            <Paper sx={{ p: 4 }}>
+                <Alert severity="info" sx={{ mb: 4 }}>
+                    <strong>Note:</strong> Ranges are read-only and automatically sourced from the database. 
+                    To modify ranges, please update the s3-mongodb-csv2ranges collection directly.
+                </Alert>
 
                 {message.text && (
                     <Alert severity={message.type} sx={{ mb: 3 }} onClose={() => setMessage({ text: '', type: '' })}>

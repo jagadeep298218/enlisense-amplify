@@ -33,6 +33,7 @@ import Settings from './components/Settings';
 import GeneralSettings from './components/GeneralSettings';
 import AGPReport from './components/AGPReport';
 import AGPComparison from './components/AGPComparison';
+import CompareAGP from './components/CompareAGP';
 import BiomarkerConfig from './components/BiomarkerConfig';
 import PopulationAnalysis from './components/PopulationAnalysis';
 import PaidUserManagement from './components/PaidUserManagement';
@@ -186,6 +187,17 @@ function App() {
               <ProtectedRoute>
                 <Layout>
                   <AGPComparison />
+                </Layout>
+              </ProtectedRoute>
+            } 
+          />
+          
+          <Route 
+            path="/compare-agp" 
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <CompareAGP />
                 </Layout>
               </ProtectedRoute>
             } 
