@@ -2539,6 +2539,7 @@ app.get('/api/population-analysis', authenticateToken, async (req, res) => {
     try {
         console.log('=== Starting Population Analysis ===');
         console.log('Query parameters:', req.query);
+        console.log('User requesting data:', req.user.username, 'Admin:', req.user.admin);
         
         // Parse filters from query parameters
         const filters = {};
