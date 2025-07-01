@@ -2587,6 +2587,7 @@ app.get('/api/population-analysis', authenticateToken, async (req, res) => {
         let latestDate = null;
         
         // Process each accessible user
+        console.log(`DEBUG: Starting to process ${accessibleUsers.length} accessible users`);
         for (const userInfo of accessibleUsers) {
             try {
                 // Check if user matches filters before processing glucose data
@@ -2595,6 +2596,7 @@ app.get('/api/population-analysis', authenticateToken, async (req, res) => {
                     const deviceInfo = userInfo.device_info || {};
                     
                     console.log(`DEBUG: Processing user ${userInfo.username} with device_info:`, deviceInfo);
+                    console.log(`DEBUG: ${userInfo.username} personal_information:`, personalInfo);
                     
                     let matchesAllFilters = true;
                     
@@ -2650,16 +2652,21 @@ app.get('/api/population-analysis', authenticateToken, async (req, res) => {
                                 const hasDiabetes = personalInfo.Diabete === true || personalInfo.diabete === true || 
                                                  personalInfo.diabetes === true || personalInfo.Diabetes === true;
                                 matches = hasDiabetes === (filterValue === 'true');
+                                console.log(`DEBUG: ${userInfo.username} diabetes check - Diabete: ${personalInfo.Diabete}, filterValue: ${filterValue}, matches: ${matches}`);
                             } else if (filterKey === 'pregnant') {
                                 const isPregnant = personalInfo.pregnant === true || personalInfo.Pregnant === true;
                                 matches = isPregnant === (filterValue === 'true');
+                                console.log(`DEBUG: ${userInfo.username} pregnant check - pregnant: ${personalInfo.pregnant}, filterValue: ${filterValue}, matches: ${matches}`);
                             } else if (filterKey === 'smokes') {
                                 matches = personalInfo.smokes === (filterValue === 'true');
+                                console.log(`DEBUG: ${userInfo.username} smokes check - smokes: ${personalInfo.smokes}, filterValue: ${filterValue}, matches: ${matches}`);
                             } else if (filterKey === 'drinks') {
                                 matches = personalInfo.drinks === (filterValue === 'true');
+                                console.log(`DEBUG: ${userInfo.username} drinks check - drinks: ${personalInfo.drinks}, filterValue: ${filterValue}, matches: ${matches}`);
                             } else if (filterKey === 'high_bp') {
                                 const hasHighBP = personalInfo['High BP'] === true || personalInfo.hypertension === true;
                                 matches = hasHighBP === (filterValue === 'true');
+                                console.log(`DEBUG: ${userInfo.username} high_bp check - High BP: ${personalInfo['High BP']}, filterValue: ${filterValue}, matches: ${matches}`);
                             } else {
                                 // For unknown filter keys, assume they match (skip filtering)
                                 matches = true;
