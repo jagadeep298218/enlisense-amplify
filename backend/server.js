@@ -2597,56 +2597,78 @@ app.get('/api/population-analysis', authenticateToken, async (req, res) => {
                     console.log(`DEBUG: Processing user ${userInfo.username} with device_info:`, deviceInfo);
                     
                     let matchesAllFilters = true;
-                    for (const [filterKey, filterValue] of Object.entries(filters)) {
-                        let matches = false;
+                    
+                    // First handle age filtering separately (since it's a range)
+                    const ageMin = filters.age_min ? parseInt(filters.age_min) : null;
+                    const ageMax = filters.age_max ? parseInt(filters.age_max) : null;
+                    
+                    if (ageMin !== null || ageMax !== null) {
+                        const userAge = deviceInfo.age;
+                        console.log(`DEBUG: User ${userInfo.username} - deviceInfo.age:`, userAge, 'type:', typeof userAge);
                         
-                        if (filterKey === 'gender') {
-                            matches = deviceInfo.gender === filterValue;
-                        } else if (filterKey === 'diabetes') {
-                            const hasDiabetes = personalInfo.Diabete === true || personalInfo.diabete === true || 
-                                             personalInfo.diabetes === true || personalInfo.Diabetes === true;
-                            matches = hasDiabetes === (filterValue === 'true');
-                        } else if (filterKey === 'pregnant') {
-                            const isPregnant = personalInfo.pregnant === true || personalInfo.Pregnant === true;
-                            matches = isPregnant === (filterValue === 'true');
-                        } else if (filterKey === 'smokes') {
-                            matches = personalInfo.smokes === (filterValue === 'true');
-                        } else if (filterKey === 'drinks') {
-                            matches = personalInfo.drinks === (filterValue === 'true');
-                        } else if (filterKey === 'high_bp') {
-                            const hasHighBP = personalInfo['High BP'] === true || personalInfo.hypertension === true;
-                            matches = hasHighBP === (filterValue === 'true');
-                        } else if (filterKey === 'age_min' || filterKey === 'age_max') {
-                            // Handle age filtering
-                            const userAge = deviceInfo.age;
-                            console.log(`DEBUG: User ${userInfo.username} - deviceInfo.age:`, userAge, 'type:', typeof userAge);
-                            if (userAge) {
-                                const age = typeof userAge === 'object' ? parseInt(userAge.$numberInt) : parseInt(userAge);
-                                console.log(`DEBUG: Parsed age for ${userInfo.username}:`, age, 'filter:', filterKey, 'value:', filterValue);
-                                if (!isNaN(age)) {
-                                    if (filterKey === 'age_min') {
-                                        matches = age >= parseInt(filterValue);
-                                        console.log(`DEBUG: age_min check: ${age} >= ${parseInt(filterValue)} = ${matches}`);
-                                    } else if (filterKey === 'age_max') {
-                                        matches = age <= parseInt(filterValue);
-                                        console.log(`DEBUG: age_max check: ${age} <= ${parseInt(filterValue)} = ${matches}`);
-                                    }
-                                } else {
-                                    console.log(`DEBUG: Invalid age for ${userInfo.username}: NaN`);
-                                    matches = false;
+                        if (userAge) {
+                            const age = typeof userAge === 'object' ? parseInt(userAge.$numberInt) : parseInt(userAge);
+                            console.log(`DEBUG: Parsed age for ${userInfo.username}:`, age, 'ageMin:', ageMin, 'ageMax:', ageMax);
+                            
+                            if (!isNaN(age)) {
+                                let ageMatches = true;
+                                if (ageMin !== null && age < ageMin) {
+                                    ageMatches = false;
+                                    console.log(`DEBUG: Age ${age} < min ${ageMin} - FAIL`);
                                 }
+                                if (ageMax !== null && age > ageMax) {
+                                    ageMatches = false;
+                                    console.log(`DEBUG: Age ${age} > max ${ageMax} - FAIL`);
+                                }
+                                if (ageMatches) {
+                                    console.log(`DEBUG: Age ${age} in range [${ageMin}, ${ageMax}] - PASS`);
+                                }
+                                matchesAllFilters = ageMatches;
                             } else {
-                                console.log(`DEBUG: No age data for ${userInfo.username}`);
-                                matches = false;
+                                console.log(`DEBUG: Invalid age for ${userInfo.username}: NaN`);
+                                matchesAllFilters = false;
                             }
                         } else {
-                            // For unknown filter keys, assume they match (skip filtering)
-                            matches = true;
-                        }
-                        
-                        if (!matches) {
+                            console.log(`DEBUG: No age data for ${userInfo.username}`);
                             matchesAllFilters = false;
-                            break;
+                        }
+                    }
+                    
+                    // Then handle other filters (excluding age_min and age_max)
+                    if (matchesAllFilters) {
+                        for (const [filterKey, filterValue] of Object.entries(filters)) {
+                            // Skip age filters as we handled them above
+                            if (filterKey === 'age_min' || filterKey === 'age_max') {
+                                continue;
+                            }
+                            
+                            let matches = false;
+                            
+                            if (filterKey === 'gender') {
+                                matches = deviceInfo.gender === filterValue;
+                            } else if (filterKey === 'diabetes') {
+                                const hasDiabetes = personalInfo.Diabete === true || personalInfo.diabete === true || 
+                                                 personalInfo.diabetes === true || personalInfo.Diabetes === true;
+                                matches = hasDiabetes === (filterValue === 'true');
+                            } else if (filterKey === 'pregnant') {
+                                const isPregnant = personalInfo.pregnant === true || personalInfo.Pregnant === true;
+                                matches = isPregnant === (filterValue === 'true');
+                            } else if (filterKey === 'smokes') {
+                                matches = personalInfo.smokes === (filterValue === 'true');
+                            } else if (filterKey === 'drinks') {
+                                matches = personalInfo.drinks === (filterValue === 'true');
+                            } else if (filterKey === 'high_bp') {
+                                const hasHighBP = personalInfo['High BP'] === true || personalInfo.hypertension === true;
+                                matches = hasHighBP === (filterValue === 'true');
+                            } else {
+                                // For unknown filter keys, assume they match (skip filtering)
+                                matches = true;
+                            }
+                            
+                            if (!matches) {
+                                matchesAllFilters = false;
+                                break;
+                            }
                         }
                     }
                     
