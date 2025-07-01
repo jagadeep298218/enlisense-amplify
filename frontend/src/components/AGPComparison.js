@@ -122,11 +122,6 @@ function AGPComparison() {
 
         const data = await response.json();
         
-        console.log('=== API RESPONSE ===');
-        console.log('Raw API response:', data);
-        console.log('Patient1 data:', data.patient1);
-        console.log('Patient2 data:', data.patient2);
-        
         // Validate that we have data for both patients
         if (!data.patient1 && !data.patient2) {
           throw new Error("No data available for either patient");
@@ -184,7 +179,7 @@ function AGPComparison() {
       );
     }
 
-    const percentiles = patientData.data?.percentiles || patientData.percentages || patientData.percentiles;
+    const percentiles = patientData.data?.percentiles || patientData.data?.statistics?.percentages || patientData.percentages || patientData.percentiles;
     if (!percentiles) {
       return (
         <Box sx={{ p: 2, textAlign: 'center' }}>
@@ -273,7 +268,7 @@ function AGPComparison() {
         tickfont: { size: 10 }
       },
       margin: { l: 60, r: 40, t: 40, b: 60 },
-      height: 500,
+      height: 550,
       showlegend: false,
       plot_bgcolor: "white",
       paper_bgcolor: "white",
@@ -301,16 +296,7 @@ function AGPComparison() {
    * - [LOW] Chart rendering protected with data validation
    */
   const createTimeInRangeChart = useCallback((patientData, title) => {
-    console.log('=== TIME IN RANGE DEBUG ===');
-    console.log('Patient data received:', patientData);
-    console.log('Patient data keys:', patientData ? Object.keys(patientData) : 'null');
-    if (patientData?.data) {
-      console.log('Patient.data keys:', Object.keys(patientData.data));
-      console.log('Patient.data.statistics:', patientData.data.statistics);
-    }
-
     if (!patientData || patientData.error) {
-      console.log('No patient data or error:', patientData?.error);
       return (
         <Box sx={{ p: 2, textAlign: 'center' }}>
           <Alert severity="warning">
@@ -320,10 +306,8 @@ function AGPComparison() {
       );
     }
 
-    const stats = patientData.data?.statistics || patientData.statistics?.statistics || patientData.statistics;
-    console.log('Extracted stats:', stats);
+    const stats = patientData.data?.statistics?.statistics || patientData.statistics?.statistics || patientData.statistics;
     if (!stats) {
-      console.log('No stats found');
       return (
         <Box sx={{ p: 2, textAlign: 'center' }}>
           <Alert severity="error">
@@ -410,7 +394,7 @@ function AGPComparison() {
         tickfont: { size: 10 }
       },
       margin: { l: 60, r: 30, t: 60, b: 80 },
-      height: 300,
+      height: 350,
       showlegend: false,
       plot_bgcolor: "white",
       paper_bgcolor: "white",
@@ -447,8 +431,8 @@ function AGPComparison() {
    * 4. Format values appropriately for display
    */
   const createStatisticsComparison = useCallback((patient1Data, patient2Data) => {
-    const stats1 = patient1Data?.data?.statistics || {};
-    const stats2 = patient2Data?.data?.statistics || {};
+    const stats1 = patient1Data?.data?.statistics?.statistics || {};
+    const stats2 = patient2Data?.data?.statistics?.statistics || {};
     
     const unit = biomarkerType === 'glucose' ? 'mg/dL' : 'ng/mL';
     
@@ -658,11 +642,6 @@ function AGPComparison() {
 
   const { patient1, patient2 } = comparisonData;
 
-  console.log('=== AGP COMPARISON RENDER ===');
-  console.log('Comparison data:', comparisonData);
-  console.log('Patient 1:', patient1);
-  console.log('Patient 2:', patient2);
-
   return (
     <Container maxWidth="xl" sx={{ py: 4 }}>
       {/* Header Controls */}
@@ -703,31 +682,31 @@ function AGPComparison() {
       </Paper>
 
       {/* AGP Charts Comparison */}
-      <Grid container spacing={2} sx={{ mb: 4 }}>
-        <Grid item xs={12} lg={6}>
+      <Grid container spacing={3} sx={{ mb: 4 }}>
+        <Grid item xs={12} xl={6}>
           <Card sx={{ height: '100%', overflow: 'hidden' }}>
-            <CardContent sx={{ p: 2 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+            <CardContent sx={{ p: 3 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
                 <PersonIcon color="primary" />
                 <Typography variant="h6">{username1}</Typography>
                 <Chip label="Patient 1" size="small" color="primary" />
               </Box>
-              <Box sx={{ width: '100%', minHeight: 500, overflow: 'auto' }}>
+              <Box sx={{ width: '100%', minHeight: 600, overflow: 'auto' }}>
                 {createAGPChart(patient1, `${username1} - AGP`)}
               </Box>
             </CardContent>
           </Card>
         </Grid>
         
-        <Grid item xs={12} lg={6}>
+        <Grid item xs={12} xl={6}>
           <Card sx={{ height: '100%', overflow: 'hidden' }}>
-            <CardContent sx={{ p: 2 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+            <CardContent sx={{ p: 3 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
                 <PersonIcon color="secondary" />
                 <Typography variant="h6">{username2}</Typography>
                 <Chip label="Patient 2" size="small" color="secondary" />
               </Box>
-              <Box sx={{ width: '100%', minHeight: 500, overflow: 'auto' }}>
+              <Box sx={{ width: '100%', minHeight: 600, overflow: 'auto' }}>
                 {createAGPChart(patient2, `${username2} - AGP`)}
               </Box>
             </CardContent>
@@ -736,31 +715,31 @@ function AGPComparison() {
       </Grid>
 
       {/* Time in Range Comparison */}
-      <Grid container spacing={2} sx={{ mb: 4 }}>
-        <Grid item xs={12} lg={6}>
+      <Grid container spacing={3} sx={{ mb: 4 }}>
+        <Grid item xs={12} xl={6}>
           <Card sx={{ height: '100%' }}>
-            <CardContent sx={{ p: 2 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+            <CardContent sx={{ p: 3 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
                 <PersonIcon color="primary" />
                 <Typography variant="h6">{username1} - Time in Range</Typography>
                 <Chip label="Patient 1" size="small" color="primary" />
               </Box>
-              <Box sx={{ width: '100%', minHeight: 350 }}>
+              <Box sx={{ width: '100%', minHeight: 400 }}>
                 {createTimeInRangeChart(patient1, `${username1} - Time in Range`)}
               </Box>
             </CardContent>
           </Card>
         </Grid>
         
-        <Grid item xs={12} lg={6}>
+        <Grid item xs={12} xl={6}>
           <Card sx={{ height: '100%' }}>
-            <CardContent sx={{ p: 2 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+            <CardContent sx={{ p: 3 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
                 <PersonIcon color="secondary" />
                 <Typography variant="h6">{username2} - Time in Range</Typography>
                 <Chip label="Patient 2" size="small" color="secondary" />
               </Box>
-              <Box sx={{ width: '100%', minHeight: 350 }}>
+              <Box sx={{ width: '100%', minHeight: 400 }}>
                 {createTimeInRangeChart(patient2, `${username2} - Time in Range`)}
               </Box>
             </CardContent>

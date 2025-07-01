@@ -94,7 +94,7 @@ const CompareAGP = () => {
                     Select two different patients and choose the biomarker type to generate a comprehensive comparison report 
                     that includes time-in-range statistics, daily patterns, and variability metrics.
                 </Typography>
-            </Paper>
+            </Paper>    
         </Container>
     );
 };

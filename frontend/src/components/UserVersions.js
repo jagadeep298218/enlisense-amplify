@@ -20,12 +20,13 @@ import {
     Tabs,
     Grid,
     styled,
-    Chip
+    Chip,
+    Stack,
+    Divider
 } from '@mui/material';
 import { DataGrid } from '@mui/x-data-grid';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import ScienceIcon from '@mui/icons-material/Science';
-import BloodtypeIcon from '@mui/icons-material/Bloodtype';
+
 import AGPReport from './AGPReport';
 
 // Styled components
@@ -363,170 +364,191 @@ const UserVersions = () => {
                 >
                     <Tab label="Device Info" />
                     {!versionId && <Tab label="Past Data" />}
-                    <Tab label="Sensor Data" />
                     <Tab label="AGP Report" />
                 </Tabs>
 
                 <Box sx={{ mt: 3 }}>
                     {currentTab === 0 ? (
                         // Device Info Tab
-                        <Container maxWidth="md">
-                            <Paper sx={{ p: 4, mt: 2 }}>
-                                <Typography variant="h4" gutterBottom align="center" color="primary">
+                        <Container maxWidth="xl" sx={{ px: 1 }}>
+                            <Paper sx={{ p: 2, mt: 2, boxShadow: 1 }}>
+                                <Typography variant="h5" gutterBottom align="center" sx={{ mb: 3, fontWeight: 'bold' }}>
                                     User Device Information
                                 </Typography>
                                 {(versionId && sensorData?.data_snapshot?.device_info) || userDeviceInfo ? (
-                                    <Grid container spacing={3} sx={{ mt: 2 }}>
+                                    <Grid container spacing={2}>
+                                        {/* User Details Section */}
                                         <Grid item xs={12} md={6}>
-                                            <Paper sx={{ p: 3, bgcolor: 'background.default' }}>
-                                                <Typography variant="h6" gutterBottom color="primary">
+                                            <Paper variant="outlined" sx={{ p: 2, height: 'fit-content' }}>
+                                                <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold', mb: 2, borderBottom: '1px solid #e0e0e0', pb: 1 }}>
                                                     User Details
                                                 </Typography>
-                                                <Box sx={{ '& > div': { mb: 2 } }}>
+                                                <Stack spacing={1.5}>
                                                     {(() => {
                                                         const deviceInfo = versionId ? sensorData?.data_snapshot?.device_info : userDeviceInfo?.device_info;
                                                         const displayUsername = versionId ? username : userDeviceInfo?.username;
                                                         return (
                                                             <>
-                                                                <Box display="flex" justifyContent="space-between">
-                                                                    <Typography variant="body1"><strong>Username:</strong></Typography>
-                                                                    <Typography variant="body1">{displayUsername}</Typography>
+                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.5 }}>
+                                                                    <Typography variant="body2" sx={{ fontWeight: 'medium', minWidth: '120px' }}>Username:</Typography>
+                                                                    <Typography variant="body2" sx={{ textAlign: 'right', fontFamily: 'monospace' }}>{displayUsername || 'N/A'}</Typography>
                                                                 </Box>
-                                                                <Box display="flex" justifyContent="space-between">
-                                                                    <Typography variant="body1"><strong>User ID:</strong></Typography>
-                                                                    <Typography variant="body1">{deviceInfo?.userID}</Typography>
+                                                                <Divider />
+                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.5 }}>
+                                                                    <Typography variant="body2" sx={{ fontWeight: 'medium', minWidth: '120px' }}>User ID:</Typography>
+                                                                    <Typography variant="body2" sx={{ textAlign: 'right', fontFamily: 'monospace' }}>{deviceInfo?.userID || 'N/A'}</Typography>
                                                                 </Box>
-                                                                <Box display="flex" justifyContent="space-between">
-                                                                    <Typography variant="body1"><strong>Gender:</strong></Typography>
-                                                                    <Typography variant="body1">{deviceInfo?.gender}</Typography>
+                                                                <Divider />
+                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.5 }}>
+                                                                    <Typography variant="body2" sx={{ fontWeight: 'medium', minWidth: '120px' }}>Gender:</Typography>
+                                                                    <Typography variant="body2" sx={{ textAlign: 'right' }}>{deviceInfo?.gender || 'N/A'}</Typography>
                                                                 </Box>
-                                                                <Box display="flex" justifyContent="space-between">
-                                                                    <Typography variant="body1"><strong>Age:</strong></Typography>
-                                                                    <Typography variant="body1">{deviceInfo?.age?.$numberInt || deviceInfo?.age}</Typography>
+                                                                <Divider />
+                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.5 }}>
+                                                                    <Typography variant="body2" sx={{ fontWeight: 'medium', minWidth: '120px' }}>Age:</Typography>
+                                                                    <Typography variant="body2" sx={{ textAlign: 'right' }}>{deviceInfo?.age?.$numberInt || deviceInfo?.age || 'N/A'}</Typography>
                                                                 </Box>
-                                                                <Box display="flex" justifyContent="space-between">
-                                                                    <Typography variant="body1"><strong>Arm:</strong></Typography>
-                                                                    <Typography variant="body1">{deviceInfo?.arm}</Typography>
+                                                                <Divider />
+                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.5 }}>
+                                                                    <Typography variant="body2" sx={{ fontWeight: 'medium', minWidth: '120px' }}>Arm:</Typography>
+                                                                    <Typography variant="body2" sx={{ textAlign: 'right' }}>{deviceInfo?.arm || 'N/A'}</Typography>
                                                                 </Box>
                                                             </>
                                                         );
                                                     })()}
-                                                </Box>
+                                                </Stack>
                                             </Paper>
                                         </Grid>
+
+                                        {/* Device & Technical Details Section */}
                                         <Grid item xs={12} md={6}>
-                                            <Paper sx={{ p: 3, bgcolor: 'background.default' }}>
-                                                <Typography variant="h6" gutterBottom color="primary">
-                                                    Device & Technical Details
+                                            <Paper variant="outlined" sx={{ p: 2, height: 'fit-content' }}>
+                                                <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold', mb: 2, borderBottom: '1px solid #e0e0e0', pb: 1 }}>
+                                                    Device &amp; Technical Details
                                                 </Typography>
-                                                <Box sx={{ '& > div': { mb: 2 } }}>
+                                                <Stack spacing={1.5}>
                                                     {(() => {
                                                         const deviceInfo = versionId ? sensorData?.data_snapshot?.device_info : userDeviceInfo?.device_info;
                                                         const currentData = versionId ? sensorData : userDeviceInfo;
                                                         return (
                                                             <>
-                                                                <Box display="flex" justifyContent="space-between">
-                                                                    <Typography variant="body1"><strong>Device ID:</strong></Typography>
-                                                                    <Typography variant="body1">{deviceInfo?.deviceID}</Typography>
+                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.5 }}>
+                                                                    <Typography variant="body2" sx={{ fontWeight: 'medium', minWidth: '140px' }}>Device ID:</Typography>
+                                                                    <Typography variant="body2" sx={{ textAlign: 'right', fontFamily: 'monospace' }}>{deviceInfo?.deviceID || 'N/A'}</Typography>
                                                                 </Box>
-                                                                <Box display="flex" justifyContent="space-between">
-                                                                    <Typography variant="body1"><strong>Sensor Combination:</strong></Typography>
-                                                                    <Typography variant="body1">{deviceInfo?.sensorCombination}</Typography>
+                                                                <Divider />
+                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.5 }}>
+                                                                    <Typography variant="body2" sx={{ fontWeight: 'medium', minWidth: '140px' }}>Sensor Combination:</Typography>
+                                                                    <Typography variant="body2" sx={{ textAlign: 'right' }}>{deviceInfo?.sensorCombination || 'N/A'}</Typography>
                                                                 </Box>
-                                                                <Box display="flex" justifyContent="space-between">
-                                                                    <Typography variant="body1"><strong>Epoch:</strong></Typography>
-                                                                    <Typography variant="body1">{deviceInfo?.epoch}</Typography>
+                                                                <Divider />
+                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.5 }}>
+                                                                    <Typography variant="body2" sx={{ fontWeight: 'medium', minWidth: '140px' }}>Epoch:</Typography>
+                                                                    <Typography variant="body2" sx={{ textAlign: 'right', fontFamily: 'monospace' }}>{deviceInfo?.epoch || 'N/A'}</Typography>
                                                                 </Box>
                                                                 {!versionId && (
                                                                     <>
-                                                                        <Box display="flex" justifyContent="space-between">
-                                                                            <Typography variant="body1"><strong>ETag:</strong></Typography>
-                                                                            <Typography variant="body1" sx={{ fontSize: '0.9rem', wordBreak: 'break-all' }}>{currentData?.etag}</Typography>
+                                                                        <Divider />
+                                                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', py: 0.5 }}>
+                                                                            <Typography variant="body2" sx={{ fontWeight: 'medium', minWidth: '140px' }}>ETag:</Typography>
+                                                                            <Typography variant="body2" sx={{ textAlign: 'right', fontSize: '0.8rem', fontFamily: 'monospace', wordBreak: 'break-all', maxWidth: '250px' }}>
+                                                                                {currentData?.etag || 'N/A'}
+                                                                            </Typography>
                                                                         </Box>
-                                                                        <Box display="flex" justifyContent="space-between">
-                                                                            <Typography variant="body1"><strong>Last Modified:</strong></Typography>
-                                                                            <Typography variant="body1">{formatDate(currentData?.last_modified)}</Typography>
+                                                                        <Divider />
+                                                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.5 }}>
+                                                                            <Typography variant="body2" sx={{ fontWeight: 'medium', minWidth: '140px' }}>Last Modified:</Typography>
+                                                                            <Typography variant="body2" sx={{ textAlign: 'right', fontSize: '0.85rem' }}>{formatDate(currentData?.last_modified) || 'N/A'}</Typography>
                                                                         </Box>
                                                                         {currentData?.processed_at && (
-                                                                            <Box display="flex" justifyContent="space-between">
-                                                                                <Typography variant="body1"><strong>Processed At:</strong></Typography>
-                                                                                <Typography variant="body1">{formatDate(currentData.processed_at.$date?.$numberLong ? new Date(parseInt(currentData.processed_at.$date.$numberLong)) : currentData.processed_at)}</Typography>
-                                                                            </Box>
+                                                                            <>
+                                                                                <Divider />
+                                                                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.5 }}>
+                                                                                    <Typography variant="body2" sx={{ fontWeight: 'medium', minWidth: '140px' }}>Processed At:</Typography>
+                                                                                    <Typography variant="body2" sx={{ textAlign: 'right', fontSize: '0.85rem' }}>
+                                                                                        {formatDate(currentData.processed_at.$date?.$numberLong ? new Date(parseInt(currentData.processed_at.$date.$numberLong)) : currentData.processed_at)}
+                                                                                    </Typography>
+                                                                                </Box>
+                                                                            </>
                                                                         )}
                                                                     </>
                                                                 )}
                                                                 {versionId && (
                                                                     <>
-                                                                        <Box display="flex" justifyContent="space-between">
-                                                                            <Typography variant="body1"><strong>Version Number:</strong></Typography>
-                                                                            <Typography variant="body1">{sensorData?.version_number?.$numberInt || sensorData?.version_number}</Typography>
+                                                                        <Divider />
+                                                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.5 }}>
+                                                                            <Typography variant="body2" sx={{ fontWeight: 'medium', minWidth: '140px' }}>Version Number:</Typography>
+                                                                            <Typography variant="body2" sx={{ textAlign: 'right', fontFamily: 'monospace' }}>
+                                                                                {sensorData?.version_number?.$numberInt || sensorData?.version_number || 'N/A'}
+                                                                            </Typography>
                                                                         </Box>
-                                                                        <Box display="flex" justifyContent="space-between">
-                                                                            <Typography variant="body1"><strong>Version Date:</strong></Typography>
-                                                                            <Typography variant="body1">{formatDate(sensorData?.versioned_at)}</Typography>
+                                                                        <Divider />
+                                                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.5 }}>
+                                                                            <Typography variant="body2" sx={{ fontWeight: 'medium', minWidth: '140px' }}>Version Date:</Typography>
+                                                                            <Typography variant="body2" sx={{ textAlign: 'right', fontSize: '0.85rem' }}>{formatDate(sensorData?.versioned_at) || 'N/A'}</Typography>
                                                                         </Box>
-                                                                        <Box display="flex" justifyContent="space-between">
-                                                                            <Typography variant="body1"><strong>Total Readings:</strong></Typography>
-                                                                            <Typography variant="body1">{sensorData?.data_snapshot?.total_readings?.$numberInt || sensorData?.data_snapshot?.data_points?.length}</Typography>
+                                                                        <Divider />
+                                                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.5 }}>
+                                                                            <Typography variant="body2" sx={{ fontWeight: 'medium', minWidth: '140px' }}>Total Readings:</Typography>
+                                                                            <Typography variant="body2" sx={{ textAlign: 'right', fontFamily: 'monospace' }}>
+                                                                                {sensorData?.data_snapshot?.total_readings?.$numberInt || sensorData?.data_snapshot?.data_points?.length || 'N/A'}
+                                                                            </Typography>
                                                                         </Box>
                                                                     </>
                                                                 )}
                                                             </>
                                                         );
                                                     })()}
-                                                </Box>
+                                                </Stack>
                                             </Paper>
                                         </Grid>
-                                        <Grid item xs={12}>
-                                            <Paper sx={{ p: 3, bgcolor: 'background.default' }}>
-                                                <Typography variant="h6" gutterBottom color="primary">
-                                                    {versionId ? 'Version Information' : 'File Information'}
-                                                </Typography>
-                                                <Box display="flex" justifyContent="space-between" sx={{ mb: 2 }}>
-                                                    <Typography variant="body1"><strong>{versionId ? 'Version ID:' : 'File ID:'}</strong></Typography>
-                                                    <Typography variant="body1" sx={{ fontSize: '0.9rem', wordBreak: 'break-all' }}>
-                                                        {versionId ? (sensorData?._id?.$oid || sensorData?._id) : userDeviceInfo?._id}
-                                                    </Typography>
-                                                </Box>
-                                                {versionId && sensorData?.data_snapshot && (
-                                                    <Box display="flex" justifyContent="space-between" sx={{ mb: 2 }}>
-                                                        <Typography variant="body1"><strong>Data Range:</strong></Typography>
-                                                        <Typography variant="body1" sx={{ fontSize: '0.9rem' }}>
-                                                            {sensorData.data_snapshot.start_time && sensorData.data_snapshot.end_time ?
-                                                                `${formatDate(sensorData.data_snapshot.start_time)} - ${formatDate(sensorData.data_snapshot.end_time)}` :
-                                                                'N/A'
-                                                            }
-                                                        </Typography>
-                                                    </Box>
-                                                )}
-                                            </Paper>
-                                        </Grid>
+
+                                        
+
                                         {/* Personal Information Section */}
                                         {personalInfo && (
-                                            <Grid item xs={12}>
-                                                <Paper sx={{ p: 3, bgcolor: 'background.default' }}>
-                                                    <Typography variant="h6" gutterBottom color="primary">
+                                            <Grid item xs={12} sx={{ mt: 1 }}>
+                                                <Paper variant="outlined" sx={{ p: 2 }}>
+                                                    <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold', mb: 2, borderBottom: '1px solid #e0e0e0', pb: 1 }}>
                                                         Personal Information
                                                     </Typography>
                                                     <Grid container spacing={2}>
                                                         {Object.entries(personalInfo.personal_information).map(([key, value]) => (
-                                                            <Grid item xs={12} sm={6} md={4} key={key}>
-                                                                <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
-                                                                    <Typography variant="body1">
-                                                                        <strong>{key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}:</strong>
+                                                            <Grid item xs={12} sm={6} md={3} key={key}>
+                                                                <Box sx={{ 
+                                                                    display: 'flex', 
+                                                                    justifyContent: 'space-between', 
+                                                                    alignItems: 'center', 
+                                                                    p: 1.5, 
+                                                                    borderRadius: 1, 
+                                                                    border: '1px solid #e0e0e0',
+                                                                    bgcolor: 'grey.50',
+                                                                    height: '48px'
+                                                                }}>
+                                                                    <Typography variant="body2" sx={{ fontWeight: 'medium', fontSize: '0.875rem' }}>
+                                                                        {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}:
                                                                     </Typography>
                                                                     <Chip 
                                                                         label={value === true ? 'Yes' : value === false ? 'No' : value}
-                                                                        color={value === true ? 'success' : value === false ? 'default' : 'primary'}
                                                                         size="small"
-                                                                        variant={typeof value === 'boolean' ? 'filled' : 'outlined'}
+                                                                        variant="outlined"
+                                                                        sx={{ 
+                                                                            fontSize: '0.75rem',
+                                                                            height: '26px',
+                                                                            borderColor: '#d0d0d0',
+                                                                            bgcolor: 'white',
+                                                                            color: 'text.primary',
+                                                                            '& .MuiChip-label': {
+                                                                                fontWeight: 'medium'
+                                                                            }
+                                                                        }}
                                                                     />
                                                                 </Box>
                                                             </Grid>
                                                         ))}
                                                     </Grid>
                                                     {personalInfo.updated_at && (
-                                                        <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: 'block' }}>
+                                                        <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: 'block', fontStyle: 'italic' }}>
                                                             Last updated: {formatDate(personalInfo.updated_at)}
                                                         </Typography>
                                                     )}
@@ -535,9 +557,11 @@ const UserVersions = () => {
                                         )}
                                     </Grid>
                                 ) : (
-                                    <Typography variant="body1" align="center" sx={{ mt: 4 }}>
-                                        No device information available for this user.
-                                    </Typography>
+                                    <Paper variant="outlined" sx={{ p: 4, textAlign: 'center' }}>
+                                        <Typography variant="body1" color="text.secondary">
+                                            No device information available for this user.
+                                        </Typography>
+                                    </Paper>
                                 )}
                             </Paper>
                         </Container>
@@ -624,178 +648,6 @@ const UserVersions = () => {
                             </Container>
                         )
                     ) : (currentTab === (versionId ? 1 : 2)) ? (
-                        sensorData && sensorTableData.length > 0 ? (
-                            <Paper sx={{ p: 3 }}>
-                                <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <Typography variant="h5" color="primary" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                        <ScienceIcon />
-                                        Sensor Data Readings
-                                    </Typography>
-                                    <Typography variant="body2" color="text.secondary">
-                                        {sensorTableData.length} readings • Real-time biomarker data
-                                    </Typography>
-                                </Box>
-
-                                <Box sx={{ height: 600, width: '100%' }}>
-                                    <DataGrid
-                                        rows={sensorTableData}
-                                        columns={[
-                                            {
-                                                field: 'reading',
-                                                headerName: 'Reading #',
-                                                width: 100,
-                                                type: 'number',
-                                                renderCell: (params) => (
-                                                    <Typography variant="body2" fontWeight="medium">
-                                                        #{params.value}
-                                                    </Typography>
-                                                )
-                                            },
-                                            {
-                                                field: 'dateTime',
-                                                headerName: 'Date & Time',
-                                                width: 180,
-                                                renderCell: (params) => (
-                                                    <Typography variant="body2" color="text.secondary">
-                                                        {params.value}
-                                                    </Typography>
-                                                )
-                                            },
-                                            {
-                                                field: 'cortisol1',
-                                                headerName: 'Cortisol Sensor 1',
-                                                width: 150,
-                                                type: 'number',
-                                                renderCell: (params) => (
-                                                    params.value ? (
-                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                            <BloodtypeIcon color="primary" fontSize="small" />
-                                                            <Typography variant="body2" fontWeight="medium">
-                                                                {params.value} ng/mL
-                                                            </Typography>
-                                                        </Box>
-                                                    ) : (
-                                                        <Typography variant="body2" color="text.disabled">
-                                                            No Data
-                                                        </Typography>
-                                                    )
-                                                )
-                                            },
-                                            {
-                                                field: 'cortisol2',
-                                                headerName: 'Cortisol Sensor 2',
-                                                width: 150,
-                                                type: 'number',
-                                                renderCell: (params) => (
-                                                    params.value ? (
-                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                            <BloodtypeIcon color="secondary" fontSize="small" />
-                                                            <Typography variant="body2" fontWeight="medium">
-                                                                {params.value} ng/mL
-                                                            </Typography>
-                                                        </Box>
-                                                    ) : (
-                                                        <Typography variant="body2" color="text.disabled">
-                                                            No Data
-                                                        </Typography>
-                                                    )
-                                                )
-                                            },
-                                            {
-                                                field: 'glucose1',
-                                                headerName: 'Glucose Sensor 1',
-                                                width: 150,
-                                                type: 'number',
-                                                renderCell: (params) => (
-                                                    params.value ? (
-                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                            <ScienceIcon color="success" fontSize="small" />
-                                                            <Typography variant="body2" fontWeight="medium">
-                                                                {params.value} mg/dL
-                                                            </Typography>
-                                                        </Box>
-                                                    ) : (
-                                                        <Typography variant="body2" color="text.disabled">
-                                                            No Data
-                                                        </Typography>
-                                                    )
-                                                )
-                                            },
-                                            {
-                                                field: 'glucose2',
-                                                headerName: 'Glucose Sensor 2',
-                                                width: 150,
-                                                type: 'number',
-                                                renderCell: (params) => (
-                                                    params.value ? (
-                                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                            <ScienceIcon color="warning" fontSize="small" />
-                                                            <Typography variant="body2" fontWeight="medium">
-                                                                {params.value} mg/dL
-                                                            </Typography>
-                                                        </Box>
-                                                    ) : (
-                                                        <Typography variant="body2" color="text.disabled">
-                                                            No Data
-                                                        </Typography>
-                                                    )
-                                                )
-                                            },
-                                            {
-                                                field: 'status',
-                                                headerName: 'Status',
-                                                width: 120,
-                                                renderCell: (params) => (
-                                                    <Chip 
-                                                        label={params.value}
-                                                        size="small"
-                                                        color={params.value === 'Valid' ? 'success' : 'default'}
-                                                        variant={params.value === 'Valid' ? 'filled' : 'outlined'}
-                                                    />
-                                                )
-                                            }
-                                        ]}
-                                        pageSize={15}
-                                        rowsPerPageOptions={[15, 25, 50, 100]}
-                                        disableSelectionOnClick
-                                        sx={{
-                                            '& .MuiDataGrid-cell:focus': {
-                                                outline: 'none'
-                                            },
-                                            '& .MuiDataGrid-row:focus': {
-                                                outline: 'none'
-                                            },
-                                            '& .MuiDataGrid-columnHeaders': {
-                                                backgroundColor: 'primary.main',
-                                                color: 'primary.contrastText',
-                                                fontWeight: 'bold'
-                                            }
-                                        }}
-                                        components={{
-                                            NoRowsOverlay: () => (
-                                                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-                                                    <Typography variant="h6" color="text.secondary">
-                                                        No sensor readings available
-                                                    </Typography>
-                                                </Box>
-                                            )
-                                        }}
-                                    />
-                                </Box>
-                            </Paper>
-                        ) : (
-                            <Container maxWidth="md">
-                                <Paper sx={{ p: 4, mt: 2 }}>
-                                    <Typography variant="h6" align="center" color="text.secondary">
-                                        No sensor data available for this user.
-                                    </Typography>
-                                    <Typography variant="body2" align="center" sx={{ mt: 2 }}>
-                                        This user has device information but no sensor data readings to display.
-                                    </Typography>
-                                </Paper>
-                            </Container>
-                        )
-                    ) : (currentTab === (versionId ? 2 : 3)) ? (
                         // AGP Report Tab
                         sensorData && sensorTableData.length > 0 ? (
                             <AGPReport 

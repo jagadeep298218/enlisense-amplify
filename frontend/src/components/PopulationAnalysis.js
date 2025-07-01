@@ -66,10 +66,11 @@ const PopulationAnalysis = () => {
     const [pendingGraphData, setPendingGraphData] = useState(null);
 
     useEffect(() => {
+        // Only fetch initial data without filters
         fetchPopulationData();
-    }, [activeFilters]);
+    }, []); // Empty dependency array - only runs once on mount
 
-    const fetchPopulationData = async () => {
+    const fetchPopulationData = async (filters = {}) => {
         try {
             setLoading(true);
             const token = localStorage.getItem('token');
@@ -77,15 +78,15 @@ const PopulationAnalysis = () => {
             const url = new URL(`${config.API_URL}/api/population-analysis`);
             
             // Add filters as query parameters
-            if (Object.keys(activeFilters).length > 0) {
-                Object.entries(activeFilters).forEach(([key, value]) => {
+            if (Object.keys(filters).length > 0) {
+                Object.entries(filters).forEach(([key, value]) => {
                     if (value !== null && value !== '' && value !== undefined) {
                         url.searchParams.append(key, value);
                     }
                 });
             }
             
-            console.log('Fetching population data with filters:', activeFilters);
+            console.log('Fetching population data with filters:', filters);
             console.log('Request URL:', url.toString());
 
             const response = await fetch(url.toString(), {
@@ -109,11 +110,52 @@ const PopulationAnalysis = () => {
                 console.log('Backend applied filters:', data.appliedFilters);
                 console.log('Filtered user count:', data.filteredUserCount);
             }
+            
+            return data; // Return the data for immediate use
         } catch (err) {
             console.error('Error fetching population data:', err);
             setError(err.message);
         } finally {
             setLoading(false);
+        }
+    };
+
+    // Separate function to fetch filtered data without updating main state
+    const fetchFilteredData = async (filters) => {
+        try {
+            const token = localStorage.getItem('token');
+            
+            const url = new URL(`${config.API_URL}/api/population-analysis`);
+            
+            // Add filters as query parameters
+            Object.entries(filters).forEach(([key, value]) => {
+                if (value !== null && value !== '' && value !== undefined) {
+                    url.searchParams.append(key, value);
+                }
+            });
+            
+            console.log('Fetching filtered data with filters:', filters);
+            console.log('Request URL:', url.toString());
+
+            const response = await fetch(url.toString(), {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to fetch filtered data');
+            }
+
+            const data = await response.json();
+            console.log('Received filtered data:', data);
+            
+            // DON'T update populationData state - just return the data
+            return data;
+        } catch (err) {
+            console.error('Error fetching filtered data:', err);
+            throw err; // Re-throw to be handled by caller
         }
     };
 
@@ -135,15 +177,11 @@ const PopulationAnalysis = () => {
     }, []);
 
     const getFilteredUserCount = () => {
-        if (Object.keys(activeFilters).length === 0) {
-            return 'Showing All Users';
-        }
-        const userCount = populationData?.filteredUserCount;
         const filterCount = Object.keys(activeFilters).length;
-        if (userCount !== undefined) {
-            return `Showing ${userCount} User${userCount !== 1 ? 's' : ''} (${filterCount} filter${filterCount > 1 ? 's' : ''} applied)`;
+        if (filterCount === 0) {
+            return 'General Population';
         }
-        return `Showing Filtered Population (${filterCount} filter${filterCount > 1 ? 's' : ''} applied)`;
+        return `${filterCount} filter${filterCount > 1 ? 's' : ''} selected - Click "Create Graph" to apply`;
     };
 
     // Graph management functions
@@ -191,18 +229,23 @@ const PopulationAnalysis = () => {
             return;
         }
 
-        if (!populationData) {
-            setError('No data available to create graph');
-            return;
-        }
-
         try {
-            // Create a new graph with the current filtered data
+            setError(null);
+            
+            // Fetch filtered data without updating the main populationData state
+            const filteredData = await fetchFilteredData(activeFilters);
+            
+            if (!filteredData) {
+                setError('No data received from server');
+                return;
+            }
+            
+            // Create a new graph with the filtered data
             const newGraph = {
                 id: Date.now(),
                 title: generateGraphTitle(activeFilters),
                 filters: { ...activeFilters },
-                data: populationData, // Use current filtered data
+                data: filteredData,
                 createdAt: new Date().toISOString()
             };
             
@@ -216,60 +259,104 @@ const PopulationAnalysis = () => {
                 setActiveFilters({});
             }
             
-            setError(null);
         } catch (err) {
-            console.error('Error creating new graph:', err);
-            setError('Failed to create graph: ' + err.message);
+            console.error('Error fetching data for graph:', err);
+            setError('Failed to fetch data for graph: ' + err.message);
+            return;
         }
     };
 
     // Filter components
     const BooleanFilter = ({ label, filterKey, description, icon }) => (
         <Grid item xs={12} sm={6} md={4}>
-            <FormControl fullWidth size="small">
-                <InputLabel>{label}</InputLabel>
-                <Select
-                    value={activeFilters[filterKey] || ''}
-                    onChange={(e) => updateFilter(filterKey, e.target.value)}
-                    label={label}
-                    startAdornment={icon}
-                >
-                    <MenuItem value="">Any</MenuItem>
-                    <MenuItem value="true">Yes</MenuItem>
-                    <MenuItem value="false">No</MenuItem>
-                </Select>
+            <Box sx={{ 
+                p: 1.5, 
+                bgcolor: 'white', 
+                borderRadius: 1,
+                border: '1px solid',
+                borderColor: activeFilters[filterKey] ? 'grey.600' : 'grey.300',
+                boxShadow: activeFilters[filterKey] ? 1 : 0,
+                transition: 'all 0.2s ease',
+                '&:hover': { 
+                    borderColor: 'grey.500',
+                    boxShadow: 1
+                }
+            }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+                    {icon}
+                    <Typography variant="body2" fontWeight="bold">{label}</Typography>
+                </Box>
+                <FormControl fullWidth size="small">
+                    <Select
+                        value={activeFilters[filterKey] || ''}
+                        onChange={(e) => updateFilter(filterKey, e.target.value)}
+                        displayEmpty
+                        sx={{ 
+                            bgcolor: 'grey.50',
+                            '& .MuiSelect-select': { 
+                                fontWeight: activeFilters[filterKey] ? 'bold' : 'normal'
+                            }
+                        }}
+                    >
+                        <MenuItem value="">Any</MenuItem>
+                        <MenuItem value="true">Yes</MenuItem>
+                        <MenuItem value="false">No</MenuItem>
+                    </Select>
+                </FormControl>
                 {description && (
-                    <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
                         {description}
                     </Typography>
                 )}
-            </FormControl>
+            </Box>
         </Grid>
     );
 
     const SelectFilter = ({ label, filterKey, options, description, icon }) => (
         <Grid item xs={12} sm={6} md={4}>
-            <FormControl fullWidth size="small">
-                <InputLabel>{label}</InputLabel>
-                <Select
-                    value={activeFilters[filterKey] || ''}
-                    onChange={(e) => updateFilter(filterKey, e.target.value)}
-                    label={label}
-                    startAdornment={icon}
-                >
-                    <MenuItem value="">Any</MenuItem>
-                    {options.map((option) => (
-                        <MenuItem key={option} value={option}>
-                            {option}
-                        </MenuItem>
-                    ))}
-                </Select>
+            <Box sx={{ 
+                p: 1.5, 
+                bgcolor: 'white', 
+                borderRadius: 1,
+                border: '1px solid',
+                borderColor: activeFilters[filterKey] ? 'grey.600' : 'grey.300',
+                boxShadow: activeFilters[filterKey] ? 1 : 0,
+                transition: 'all 0.2s ease',
+                '&:hover': { 
+                    borderColor: 'grey.500',
+                    boxShadow: 1
+                }
+            }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+                    {icon}
+                    <Typography variant="body2" fontWeight="bold">{label}</Typography>
+                </Box>
+                <FormControl fullWidth size="small">
+                    <Select
+                        value={activeFilters[filterKey] || ''}
+                        onChange={(e) => updateFilter(filterKey, e.target.value)}
+                        displayEmpty
+                        sx={{ 
+                            bgcolor: 'grey.50',
+                            '& .MuiSelect-select': { 
+                                fontWeight: activeFilters[filterKey] ? 'bold' : 'normal'
+                            }
+                        }}
+                    >
+                        <MenuItem value="">Any</MenuItem>
+                        {options.map((option) => (
+                            <MenuItem key={option} value={option}>
+                                {option}
+                            </MenuItem>
+                        ))}
+                    </Select>
+                </FormControl>
                 {description && (
-                    <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
                         {description}
                     </Typography>
                 )}
-            </FormControl>
+            </Box>
         </Grid>
     );
 
@@ -293,7 +380,7 @@ const PopulationAnalysis = () => {
         const veryLowHeight = averageTimeVeryLow || 0;
 
         return (
-            <Card sx={{ height: '100%', border: 2, borderColor: isGeneral ? 'primary.main' : 'secondary.main' }}>
+            <Card sx={{ height: '100%', border: 2, borderColor: 'grey.400' }}>
                 <CardContent>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                         <Typography variant="h6" fontWeight="bold" sx={{ flexGrow: 1, textAlign: 'center' }}>
@@ -304,7 +391,7 @@ const PopulationAnalysis = () => {
                                 <IconButton 
                                     size="small" 
                                     onClick={() => onDelete(graphId)}
-                                    sx={{ color: 'error.main' }}
+                                    sx={{ color: 'grey.600' }}
                                 >
                                     <DeleteIcon />
                                 </IconButton>
@@ -498,21 +585,31 @@ const PopulationAnalysis = () => {
             </Paper>
 
             {/* Filter Panel */}
-            <Paper sx={{ mb: 4, p: 2 }}>
+            <Paper sx={{ mb: 4, overflow: 'hidden' }}>
                 <Accordion 
                     expanded={filterExpanded}
                     onChange={(e, isExpanded) => setFilterExpanded(isExpanded)}
+                    sx={{ boxShadow: 'none' }}
                 >
-                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                    <AccordionSummary 
+                        expandIcon={<ExpandMoreIcon />}
+                        sx={{ 
+                            bgcolor: 'white', 
+                            borderBottom: filterExpanded ? '1px solid' : 'none',
+                            borderColor: 'divider',
+                            '&:hover': { bgcolor: 'grey.50' }
+                        }}
+                    >
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, width: '100%' }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                                 <FilterIcon />
-                                <Typography variant="h6">Population Filters</Typography>
+                                <Typography variant="h6" fontWeight="bold">Population Filters</Typography>
                                 {Object.keys(activeFilters).length > 0 && (
                                     <Chip 
                                         label={`${Object.keys(activeFilters).length} active`} 
-                                        color="primary" 
-                                        size="small" 
+                                        variant="outlined"
+                                        size="small"
+                                        sx={{ fontWeight: 'bold', borderColor: 'grey.400' }}
                                     />
                                 )}
                             </Box>
@@ -524,6 +621,9 @@ const PopulationAnalysis = () => {
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 clearAllFilters();
+                                            }}
+                                            sx={{ 
+                                                '&:hover': { bgcolor: 'grey.100' }
                                             }}
                                         >
                                             <ClearIcon />
@@ -537,6 +637,9 @@ const PopulationAnalysis = () => {
                                             e.stopPropagation();
                                             fetchPopulationData();
                                         }}
+                                        sx={{ 
+                                            '&:hover': { bgcolor: 'grey.100' }
+                                        }}
                                     >
                                         <RefreshIcon />
                                     </IconButton>
@@ -544,120 +647,167 @@ const PopulationAnalysis = () => {
                             </Box>
                         </Box>
                     </AccordionSummary>
-                    <AccordionDetails>
-                        <Grid container spacing={3}>
-                            {/* Demographics */}
+                    <AccordionDetails sx={{ p: 2 }}>
+                        <Grid container spacing={2}>
+                            {/* Demographics Section */}
                             <Grid item xs={12}>
-                                <Typography variant="subtitle1" sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                                    <PeopleIcon />
-                                    Demographics
-                                </Typography>
-                                <Grid container spacing={2}>
-                                    <SelectFilter
-                                        label="Gender"
-                                        filterKey="gender"
-                                        options={['M', 'F', 'Other']}
-                                        description="Filter by gender"
-                                    />
-                                    <Grid item xs={12} sm={6} md={4}>
-                                        <FormControl fullWidth size="small">
-                                            <Typography variant="caption" sx={{ mb: 1 }}>Age Range</Typography>
-                                            <Box sx={{ display: 'flex', gap: 1 }}>
-                                                <TextField
-                                                    label="Start Age"
-                                                    type="number"
-                                                    size="small"
-                                                    value={activeFilters.ageMin || ''}
-                                                    onChange={e => updateFilter('ageMin', e.target.value ? Number(e.target.value) : '')}
-                                                    inputProps={{ min: 0 }}
-                                                />
-                                                <TextField
-                                                    label="End Age"
-                                                    type="number"
-                                                    size="small"
-                                                    value={activeFilters.ageMax || ''}
-                                                    onChange={e => updateFilter('ageMax', e.target.value ? Number(e.target.value) : '')}
-                                                    inputProps={{ min: 0 }}
-                                                />
+                                <Box sx={{ 
+                                    p: 1.5, 
+                                    bgcolor: 'grey.50', 
+                                    borderRadius: 1, 
+                                    border: '1px solid',
+                                    borderColor: 'grey.300'
+                                }}>
+                                    <Typography variant="subtitle1" sx={{ 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        gap: 1, 
+                                        mb: 2,
+                                        color: 'text.primary',
+                                        fontWeight: 'bold'
+                                    }}>
+                                        <PeopleIcon fontSize="small" />
+                                        Demographics
+                                    </Typography>
+                                    <Grid container spacing={2}>
+                                        <SelectFilter
+                                            label="Gender"
+                                            filterKey="gender"
+                                            options={['M', 'F', 'Other']}
+                                            description="Filter by gender"
+                                        />
+                                        <Grid item xs={12} sm={6} md={4}>
+                                            <Box sx={{ 
+                                                p: 2, 
+                                                bgcolor: 'white', 
+                                                borderRadius: 1,
+                                                border: '1px solid',
+                                                borderColor: 'grey.300'
+                                            }}>
+                                                <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 'bold' }}>
+                                                    Age Range
+                                                </Typography>
+                                                <Box sx={{ display: 'flex', gap: 1 }}>
+                                                    <TextField
+                                                        label="Min Age"
+                                                        type="number"
+                                                        size="small"
+                                                        value={activeFilters.ageMin || ''}
+                                                        onChange={e => updateFilter('ageMin', e.target.value ? Number(e.target.value) : '')}
+                                                        inputProps={{ min: 0, max: 120 }}
+                                                        fullWidth
+                                                    />
+                                                    <TextField
+                                                        label="Max Age"
+                                                        type="number"
+                                                        size="small"
+                                                        value={activeFilters.ageMax || ''}
+                                                        onChange={e => updateFilter('ageMax', e.target.value ? Number(e.target.value) : '')}
+                                                        inputProps={{ min: 0, max: 120 }}
+                                                        fullWidth
+                                                    />
+                                                </Box>
+                                                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                                                    Filter by custom age range (0-120 years)
+                                                </Typography>
                                             </Box>
-                                            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
-                                                Filter by custom age range
-                                            </Typography>
-                                        </FormControl>
+                                        </Grid>
+                                        <SelectFilter
+                                            label="Institution"
+                                            filterKey="institution"
+                                            options={['Stanford', 'Harvard', 'Mayo Clinic', 'Johns Hopkins', 'Other']}
+                                            description="Filter by institution"
+                                        />
                                     </Grid>
-                                    <SelectFilter
-                                        label="Institution"
-                                        filterKey="institution"
-                                        options={['Stanford', 'Harvard', 'Mayo Clinic', 'Johns Hopkins', 'Other']}
-                                        description="Filter by institution"
-                                    />
-                                </Grid>
+                                </Box>
                             </Grid>
 
+                            {/* Medical Conditions Section */}
                             <Grid item xs={12}>
-                                <Divider />
+                                <Box sx={{ 
+                                    p: 1.5, 
+                                    bgcolor: 'grey.50', 
+                                    borderRadius: 1,
+                                    border: '1px solid',
+                                    borderColor: 'grey.300'
+                                }}>
+                                    <Typography variant="subtitle1" sx={{ 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        gap: 1, 
+                                        mb: 2,
+                                        color: 'text.primary',
+                                        fontWeight: 'bold'
+                                    }}>
+                                        <MedicalIcon fontSize="small" />
+                                        Medical Conditions
+                                    </Typography>
+                                    <Grid container spacing={2}>
+                                        <BooleanFilter
+                                            label="Diabetes"
+                                            filterKey="diabetes"
+                                            description="Type 1 or Type 2 diabetes"
+                                        />
+                                        <BooleanFilter
+                                            label="High Blood Pressure"
+                                            filterKey="high_bp"
+                                            description="Hypertension diagnosis"
+                                        />
+                                        <BooleanFilter
+                                            label="Pregnant"
+                                            filterKey="pregnant"
+                                            description="Currently pregnant"
+                                        />
+                                        <BooleanFilter
+                                            label="Army Personnel"
+                                            filterKey="army"
+                                            description="Military service member"
+                                        />
+                                    </Grid>
+                                </Box>
                             </Grid>
 
-                            {/* Medical Conditions */}
+                            {/* Lifestyle Section */}
                             <Grid item xs={12}>
-                                <Typography variant="subtitle1" sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                                    <MedicalIcon />
-                                    Medical Conditions
-                                </Typography>
-                                <Grid container spacing={2}>
-                                    <BooleanFilter
-                                        label="Diabetes"
-                                        filterKey="diabetes"
-                                        description="Type 1 or Type 2 diabetes"
-                                    />
-                                    <BooleanFilter
-                                        label="High Blood Pressure"
-                                        filterKey="high_bp"
-                                        description="Hypertension diagnosis"
-                                    />
-                                    <BooleanFilter
-                                        label="Pregnant"
-                                        filterKey="pregnant"
-                                        description="Currently pregnant"
-                                    />
-                                    <BooleanFilter
-                                        label="Army Personnel"
-                                        filterKey="army"
-                                        description="Military service member"
-                                    />
-                                </Grid>
-                            </Grid>
-
-                            <Grid item xs={12}>
-                                <Divider />
-                            </Grid>
-
-                            {/* Lifestyle */}
-                            <Grid item xs={12}>
-                                <Typography variant="subtitle1" sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                                    <DrinkIcon />
-                                    Lifestyle Factors
-                                </Typography>
-                                <Grid container spacing={2}>
-                                    <BooleanFilter
-                                        label="Smoker"
-                                        filterKey="smokes"
-                                        description="Current smoking status"
-                                        icon={<SmokeIcon />}
-                                    />
-                                    <BooleanFilter
-                                        label="Drinks Alcohol"
-                                        filterKey="drinks"
-                                        description="Regular alcohol consumption"
-                                        icon={<DrinkIcon />}
-                                    />
-                                    <SelectFilter
-                                        label="Physical Activity"
-                                        filterKey="activity_level"
-                                        options={['Low', 'Moderate', 'High', 'Very High']}
-                                        description="Exercise frequency"
-                                    />
-                                </Grid>
+                                <Box sx={{ 
+                                    p: 1.5, 
+                                    bgcolor: 'grey.50', 
+                                    borderRadius: 1,
+                                    border: '1px solid',
+                                    borderColor: 'grey.300'
+                                }}>
+                                    <Typography variant="subtitle1" sx={{ 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        gap: 1, 
+                                        mb: 2,
+                                        color: 'text.primary',
+                                        fontWeight: 'bold'
+                                    }}>
+                                        <DrinkIcon fontSize="small" />
+                                        Lifestyle Factors
+                                    </Typography>
+                                    <Grid container spacing={2}>
+                                        <BooleanFilter
+                                            label="Smoker"
+                                            filterKey="smokes"
+                                            description="Current smoking status"
+                                            icon={<SmokeIcon />}
+                                        />
+                                        <BooleanFilter
+                                            label="Drinks Alcohol"
+                                            filterKey="drinks"
+                                            description="Regular alcohol consumption"
+                                            icon={<DrinkIcon />}
+                                        />
+                                        <SelectFilter
+                                            label="Physical Activity"
+                                            filterKey="activity_level"
+                                            options={['Low', 'Moderate', 'High', 'Very High']}
+                                            description="Exercise frequency"
+                                        />
+                                    </Grid>
+                                </Box>
                             </Grid>
                         </Grid>
 
@@ -687,7 +837,7 @@ const PopulationAnalysis = () => {
 
                         {/* Create Graph Button */}
                         {Object.keys(activeFilters).length > 0 && (
-                            <Box sx={{ mt: 3, p: 2, bgcolor: 'action.hover', borderRadius: 1 }}>
+                            <Box sx={{ mt: 3, p: 2, bgcolor: 'grey.50', borderRadius: 1, border: '1px solid', borderColor: 'grey.300' }}>
                                 <Typography variant="subtitle2" gutterBottom align="center">
                                     Ready to Create: "{generateGraphTitle(activeFilters)}"
                                 </Typography>
@@ -697,8 +847,8 @@ const PopulationAnalysis = () => {
                                         startIcon={<AddIcon />}
                                         onClick={createNewGraph}
                                         disabled={savedGraphs.length >= maxGraphs || loading}
-                                        color="secondary"
                                         size="large"
+                                        sx={{ bgcolor: 'grey.800', '&:hover': { bgcolor: 'grey.700' }, '&:disabled': { bgcolor: 'grey.400' } }}
                                     >
                                         {loading ? 'Creating...' : `Create Graph (${savedGraphs.length}/${maxGraphs})`}
                                     </Button>
@@ -715,7 +865,8 @@ const PopulationAnalysis = () => {
                         {Object.keys(activeFilters).length === 0 && (
                             <Box sx={{ mt: 3, textAlign: 'center' }}>
                                 <Typography variant="body2" color="text.secondary">
-                                    Select filters above and click "Create Graph" to add comparison graphs
+                                    Select filters above and click "Create Graph" to generate filtered comparison graphs.
+                                    The main graph will always show general population data.
                                 </Typography>
                             </Box>
                         )}
@@ -725,7 +876,7 @@ const PopulationAnalysis = () => {
 
             {/* Saved Graphs Info */}
             {savedGraphs.length > 0 && (
-                <Box sx={{ mb: 3, p: 2, bgcolor: 'info.light', borderRadius: 1 }}>
+                <Box sx={{ mb: 3, p: 2, bgcolor: 'grey.50', borderRadius: 1, border: '1px solid', borderColor: 'grey.300' }}>
                     <Typography variant="h6" gutterBottom>
                         Comparison Graphs ({savedGraphs.length}/{maxGraphs})
                     </Typography>
@@ -737,7 +888,7 @@ const PopulationAnalysis = () => {
                                 onDelete={() => deleteGraph(graph.id)}
                                 deleteIcon={<DeleteIcon />}
                                 variant="outlined"
-                                color="primary"
+                                sx={{ borderColor: 'grey.400' }}
                             />
                         ))}
                     </Box>
@@ -746,10 +897,10 @@ const PopulationAnalysis = () => {
 
             {/* Filter Status Alert */}
             {Object.keys(activeFilters).length > 0 && (
-                <Alert severity="info" sx={{ mb: 3 }}>
+                <Alert severity="info" sx={{ mb: 3, bgcolor: 'grey.50', color: 'text.primary' }}>
                     <Typography variant="body2">
-                        <strong>Viewing Filtered Data:</strong> The main graph below shows data for "{generateGraphTitle(activeFilters)}" only. 
-                        Click "Create Graph" to save this as a comparison graph, or clear filters to return to general population.
+                        <strong>Filters Selected:</strong> You have selected filters for "{generateGraphTitle(activeFilters)}". 
+                        The main graph below still shows general population data. Click "Create Graph" to generate a filtered comparison graph.
                     </Typography>
                 </Alert>
             )}
@@ -759,10 +910,7 @@ const PopulationAnalysis = () => {
                 {/* Main Population Display - General or Filtered */}
                 <Grid item xs={12} md={savedGraphs.length === 0 ? 12 : savedGraphs.length === 1 ? 6 : 4}>
                     <PopulationCard
-                        title={Object.keys(activeFilters).length > 0 ? 
-                            `Filtered: ${generateGraphTitle(activeFilters)}` : 
-                            "General Population"
-                        }
+                        title="General Population"
                         data={populationData?.general}
                         targetRanges={{
                             targetMin: 70,
@@ -775,7 +923,7 @@ const PopulationAnalysis = () => {
                             highLimit: 25,
                             lowLimit: 4
                         }}
-                        isGeneral={Object.keys(activeFilters).length === 0}
+                        isGeneral={true}
                     />
                 </Grid>
 
@@ -805,55 +953,7 @@ const PopulationAnalysis = () => {
                 ))}
             </Grid>
 
-            {/* Summary Statistics */}
-            {populationData && (
-                <Box sx={{ mt: 4 }}>
-                    <Typography variant="h6" gutterBottom>
-                        Summary Statistics
-                    </Typography>
-                    <Grid container spacing={2}>
-                        <Grid item xs={12} md={4}>
-                            <Card>
-                                <CardContent>
-                                    <Typography variant="subtitle2" color="text.secondary">
-                                        Total Users Analyzed
-                                    </Typography>
-                                    <Typography variant="h4">
-                                        {(populationData.general?.userCount || 0) + 
-                                         (populationData.diabetes?.userCount || 0) + 
-                                         (populationData.pregnancy?.userCount || 0)}
-                                    </Typography>
-                                </CardContent>
-                            </Card>
-                        </Grid>
-                        <Grid item xs={12} md={4}>
-                            <Card>
-                                <CardContent>
-                                    <Typography variant="subtitle2" color="text.secondary">
-                                        Average Time in Target (All Groups)
-                                    </Typography>
-                                    <Typography variant="h4">
-                                        {populationData.overall?.averageTimeInTarget?.toFixed(1) || 'N/A'}%
-                                    </Typography>
-                                </CardContent>
-                            </Card>
-                        </Grid>
-                        <Grid item xs={12} md={4}>
-                            <Card>
-                                <CardContent>
-                                    <Typography variant="subtitle2" color="text.secondary">
-                                        Data Collection Period
-                                    </Typography>
-                                    <Typography variant="h6">
-                                        {populationData.dateRange || 'N/A'}
-                                    </Typography>
-                                </CardContent>
-                            </Card>
-                        </Grid>
-                    </Grid>
-                </Box>
-            )}
-
+            
             {/* Legend */}
             <Box sx={{ mt: 4, p: 2, backgroundColor: 'grey.50', borderRadius: 1 }}>
                 <Typography variant="subtitle2" gutterBottom fontWeight="bold">
@@ -915,13 +1015,13 @@ const PopulationAnalysis = () => {
                                 <ListItemSecondaryAction>
                                     <Button
                                         variant="outlined"
-                                        color="error"
                                         size="small"
                                         startIcon={<DeleteIcon />}
                                         onClick={() => {
                                             deleteGraph(graph.id);
                                             addPendingGraph();
                                         }}
+                                        sx={{ borderColor: 'grey.400', color: 'grey.700', '&:hover': { borderColor: 'grey.600', bgcolor: 'grey.50' } }}
                                     >
                                         Delete & Add New
                                     </Button>
@@ -931,7 +1031,7 @@ const PopulationAnalysis = () => {
                     </List>
                 </DialogContent>
                 <DialogActions>
-                    <Button onClick={cancelPendingGraph}>Cancel</Button>
+                    <Button onClick={cancelPendingGraph} sx={{ color: 'grey.700' }}>Cancel</Button>
                 </DialogActions>
             </Dialog>
         </Container>
