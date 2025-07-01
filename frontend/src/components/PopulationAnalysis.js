@@ -30,7 +30,8 @@ import {
     List,
     ListItem,
     ListItemText,
-    ListItemSecondaryAction
+    ListItemSecondaryAction,
+    TextField
 } from '@mui/material';
 import {
     ExpandMore as ExpandMoreIcon,
@@ -547,15 +548,35 @@ const PopulationAnalysis = () => {
                                     <SelectFilter
                                         label="Gender"
                                         filterKey="gender"
-                                        options={['Male', 'Female', 'Other']}
+                                        options={['M', 'F', 'Other']}
                                         description="Filter by gender"
                                     />
-                                    <SelectFilter
-                                        label="Age Group"
-                                        filterKey="age_group"
-                                        options={['18-30', '31-45', '46-60', '61-75', '75+']}
-                                        description="Filter by age range"
-                                    />
+                                    <Grid item xs={12} sm={6} md={4}>
+                                        <FormControl fullWidth size="small">
+                                            <Typography variant="caption" sx={{ mb: 1 }}>Age Range</Typography>
+                                            <Box sx={{ display: 'flex', gap: 1 }}>
+                                                <TextField
+                                                    label="Start Age"
+                                                    type="number"
+                                                    size="small"
+                                                    value={activeFilters.ageMin || ''}
+                                                    onChange={e => updateFilter('ageMin', e.target.value ? Number(e.target.value) : '')}
+                                                    inputProps={{ min: 0 }}
+                                                />
+                                                <TextField
+                                                    label="End Age"
+                                                    type="number"
+                                                    size="small"
+                                                    value={activeFilters.ageMax || ''}
+                                                    onChange={e => updateFilter('ageMax', e.target.value ? Number(e.target.value) : '')}
+                                                    inputProps={{ min: 0 }}
+                                                />
+                                            </Box>
+                                            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
+                                                Filter by custom age range
+                                            </Typography>
+                                        </FormControl>
+                                    </Grid>
                                     <SelectFilter
                                         label="Institution"
                                         filterKey="institution"
@@ -767,6 +788,7 @@ const PopulationAnalysis = () => {
                                 highLimit: 25,
                                 lowLimit: 4
                             }}
+                            
                             onDelete={deleteGraph}
                             graphId={graph.id}
                             isGeneral={false}
