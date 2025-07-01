@@ -2599,8 +2599,8 @@ app.get('/api/population-analysis', authenticateToken, async (req, res) => {
                     let matchesAllFilters = true;
                     
                     // First handle age filtering separately (since it's a range)
-                    const ageMin = filters.age_min ? parseInt(filters.age_min) : null;
-                    const ageMax = filters.age_max ? parseInt(filters.age_max) : null;
+                    const ageMin = filters.ageMin ? parseInt(filters.ageMin) : null;
+                    const ageMax = filters.ageMax ? parseInt(filters.ageMax) : null;
                     
                     if (ageMin !== null || ageMax !== null) {
                         const userAge = deviceInfo.age;
@@ -2638,7 +2638,7 @@ app.get('/api/population-analysis', authenticateToken, async (req, res) => {
                     if (matchesAllFilters) {
                         for (const [filterKey, filterValue] of Object.entries(filters)) {
                             // Skip age filters as we handled them above
-                            if (filterKey === 'age_min' || filterKey === 'age_max') {
+                            if (filterKey === 'ageMin' || filterKey === 'ageMax') {
                                 continue;
                             }
                             
