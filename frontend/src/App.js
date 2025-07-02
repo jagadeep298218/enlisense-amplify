@@ -34,7 +34,7 @@ import GeneralSettings from './components/GeneralSettings';
 import AGPReport from './components/AGPReport';
 import AGPComparison from './components/AGPComparison';
 import CompareAGP from './components/CompareAGP';
-import BiomarkerConfig from './components/BiomarkerConfig';
+
 import PopulationAnalysis from './components/PopulationAnalysis';
 import PaidUserManagement from './components/PaidUserManagement';
 import DemographicFilter from './components/DemographicFilter';
@@ -203,16 +203,7 @@ function App() {
             } 
           />
           
-          <Route 
-            path="/admin/biomarker-config" 
-            element={
-              <ProtectedRoute>
-                <Layout>
-                  <BiomarkerConfig />
-                </Layout>
-              </ProtectedRoute>
-            } 
-          />
+
           
           <Route 
             path="/population-analysis" 

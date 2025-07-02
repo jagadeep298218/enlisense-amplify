@@ -370,16 +370,16 @@ const UserVersions = () => {
                 <Box sx={{ mt: 3 }}>
                     {currentTab === 0 ? (
                         // Device Info Tab
-                        <Container maxWidth="xl" sx={{ px: 1 }}>
-                            <Paper sx={{ p: 2, mt: 2, boxShadow: 1 }}>
-                                <Typography variant="h5" gutterBottom align="center" sx={{ mb: 3, fontWeight: 'bold' }}>
+                        <Container maxWidth="lg">
+                            <Paper sx={{ p: 3, mt: 2, boxShadow: 1 }}>
+                                <Typography variant="h5" gutterBottom align="center" sx={{ mb: 4, fontWeight: 'bold' }}>
                                     User Device Information
                                 </Typography>
                                 {(versionId && sensorData?.data_snapshot?.device_info) || userDeviceInfo ? (
-                                    <Grid container spacing={2}>
+                                    <Grid container spacing={3}>
                                         {/* User Details Section */}
                                         <Grid item xs={12} md={6}>
-                                            <Paper variant="outlined" sx={{ p: 2, height: 'fit-content' }}>
+                                            <Paper variant="outlined" sx={{ p: 3, height: 'fit-content' }}>
                                                 <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold', mb: 2, borderBottom: '1px solid #e0e0e0', pb: 1 }}>
                                                     User Details
                                                 </Typography>
@@ -422,7 +422,7 @@ const UserVersions = () => {
 
                                         {/* Device & Technical Details Section */}
                                         <Grid item xs={12} md={6}>
-                                            <Paper variant="outlined" sx={{ p: 2, height: 'fit-content' }}>
+                                            <Paper variant="outlined" sx={{ p: 3, height: 'fit-content' }}>
                                                 <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold', mb: 2, borderBottom: '1px solid #e0e0e0', pb: 1 }}>
                                                     Device &amp; Technical Details
                                                 </Typography>
@@ -503,12 +503,10 @@ const UserVersions = () => {
                                             </Paper>
                                         </Grid>
 
-                                        
-
                                         {/* Personal Information Section */}
                                         {personalInfo && (
-                                            <Grid item xs={12} sx={{ mt: 1 }}>
-                                                <Paper variant="outlined" sx={{ p: 2 }}>
+                                            <Grid item xs={12} sx={{ mt: 2 }}>
+                                                <Paper variant="outlined" sx={{ p: 3 }}>
                                                     <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold', mb: 2, borderBottom: '1px solid #e0e0e0', pb: 1 }}>
                                                         Personal Information
                                                     </Typography>

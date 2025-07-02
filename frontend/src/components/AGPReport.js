@@ -730,56 +730,159 @@ function AGPReport({ username: usernameProp, embedMode = false }) {
   // Destructure chart configuration for use in render
   const { ranges, rangeValues, rangeLabels, rangeColors, unit } = chartConfiguration;
 
-  // AGP Chart Data for Plotly
+  // AGP Chart Data for Plotly - Filter out time points with no data
   const hourLabels = Array.from({ length: 24 }, (_, i) => `${i}:00`);
+
+  // Helper function to filter out null/undefined/zero values and corresponding x values
+  const filterValidDataPoints = (xValues, yValues) => {
+    const validPairs = [];
+    for (let i = 0; i < xValues.length && i < yValues.length; i++) {
+      const yValue = yValues[i];
+      // Only include data points that have valid values (not null, undefined, NaN, or zero/very small values)
+      // For glucose, values should be > 10, for cortisol > 0.1 to be considered real data
+      const minThreshold = biomarkerType === 'glucose' ? 10 : 0.1;
+      if (yValue !== null && yValue !== undefined && !isNaN(yValue) && yValue > minThreshold) {
+        validPairs.push({ x: xValues[i], y: yValue });
+      }
+    }
+    return {
+      x: validPairs.map(pair => pair.x),
+      y: validPairs.map(pair => pair.y)
+    };
+  };
+
+  // Debug: Log the original data to see what we're working with
+  console.log('Original percentile data:', {
+    percentile_95: patientData.percentages.percentile_95,
+    percentile_75: patientData.percentages.percentile_75,
+    percentile_50: patientData.percentages.percentile_50,
+    percentile_25: patientData.percentages.percentile_25,
+    percentile_5: patientData.percentages.percentile_5
+  });
+
+  // More aggressive approach: Look for data variation and consecutive identical values
+  const processPercentileData = (yValues) => {
+    if (!yValues || !Array.isArray(yValues)) {
+      return new Array(24).fill(null);
+    }
+
+    const processedValues = yValues.map((value, index) => {
+      // Convert to number and check validity
+      const numValue = Number(value);
+      
+      // If it's not a valid number, return null
+      if (isNaN(numValue) || numValue === null || numValue === undefined) {
+        return null;
+      }
+
+      // For glucose, consider very low values as missing data
+      if (biomarkerType === 'glucose' && numValue < 20) {
+        return null;
+      }
+      
+      // For cortisol, consider very low values as missing data  
+      if (biomarkerType === 'cortisol' && numValue < 0.5) {
+        return null;
+      }
+
+      return numValue;
+    });
+
+    // Check for flat lines (consecutive identical values) and convert to nulls
+    const result = [...processedValues];
+    let flatLineStart = -1;
+    
+    for (let i = 0; i < result.length; i++) {
+      if (result[i] === null) continue;
+      
+      // Look ahead to see if we have a sequence of identical values
+      let identicalCount = 1;
+      let j = i + 1;
+      
+      while (j < result.length && result[j] === result[i]) {
+        identicalCount++;
+        j++;
+      }
+      
+      // If we have 6+ consecutive identical values, it's likely a flat line artifact
+      if (identicalCount >= 6) {
+        console.log(`Found flat line of ${identicalCount} identical values (${result[i]}) from hour ${i} to ${j-1}`);
+        // Convert the flat line to nulls except for the first and last points
+        for (let k = i + 1; k < j - 1; k++) {
+          result[k] = null;
+        }
+        i = j - 1; // Skip ahead
+      }
+    }
+
+    return result;
+  };
+
+  // Process data arrays to remove flat lines and invalid data
+  const percentile95Values = processPercentileData(patientData.percentages.percentile_95);
+  const percentile75Values = processPercentileData(patientData.percentages.percentile_75);
+  const percentile50Values = processPercentileData(patientData.percentages.percentile_50);
+  const percentile25Values = processPercentileData(patientData.percentages.percentile_25);
+  const percentile5Values = processPercentileData(patientData.percentages.percentile_5);
+
+  console.log('Processed percentile data:', {
+    percentile_95: percentile95Values,
+    percentile_50: percentile50Values,
+    percentile_5: percentile5Values
+  });
 
   const agpData = [
     {
       x: hourLabels,
-      y: patientData.percentages.percentile_95,
+      y: percentile95Values,
       name: "95th Percentile",
       line: { color: "#e5e7eb", width: 1 },
       mode: "lines",
       fill: "tonexty",
       fillcolor: "rgba(229, 231, 235, 0.2)",
+      connectgaps: false,
       hovertemplate: `<b>95th Percentile</b><br>%{x}: %{y:.${biomarkerType === 'glucose' ? '0' : '3'}f} ${unit}<extra></extra>`,
     },
     {
       x: hourLabels,
-      y: patientData.percentages.percentile_75,
+      y: percentile75Values,
       name: "75th Percentile",
       line: { color: "#9ca3af", width: 1 },
       mode: "lines",
       fill: "tonexty",
       fillcolor: "rgba(156, 163, 175, 0.3)",
+      connectgaps: false,
       hovertemplate: `<b>75th Percentile</b><br>%{x}: %{y:.${biomarkerType === 'glucose' ? '0' : '3'}f} ${unit}<extra></extra>`,
     },
     {
       x: hourLabels,
-      y: patientData.percentages.percentile_50,
+      y: percentile50Values,
       name: "Median (50th)",
       line: { color: "#374151", width: 3 },
       mode: "lines",
+      connectgaps: false,
       hovertemplate: `<b>Median</b><br>%{x}: %{y:.${biomarkerType === 'glucose' ? '0' : '3'}f} ${unit}<extra></extra>`,
     },
     {
       x: hourLabels,
-      y: patientData.percentages.percentile_25,
+      y: percentile25Values,
       name: "25th Percentile",
       line: { color: "#9ca3af", width: 1 },
       mode: "lines",
       fill: "tonexty",
       fillcolor: "rgba(156, 163, 175, 0.3)",
+      connectgaps: false,
       hovertemplate: `<b>25th Percentile</b><br>%{x}: %{y:.${biomarkerType === 'glucose' ? '0' : '3'}f} ${unit}<extra></extra>`,
     },
     {
       x: hourLabels,
-      y: patientData.percentages.percentile_5,
+      y: percentile5Values,
       name: "5th Percentile",
       line: { color: "#e5e7eb", width: 1 },
       mode: "lines",
       fill: "tonexty",
       fillcolor: "rgba(229, 231, 235, 0.2)",
+      connectgaps: false,
       hovertemplate: `<b>5th Percentile</b><br>%{x}: %{y:.${biomarkerType === 'glucose' ? '0' : '3'}f} ${unit}<extra></extra>`,
     },
   ];

@@ -402,17 +402,6 @@ const PopulationAnalysis = () => {
                         n = {userCount} users
                     </Typography>
 
-                    {/* Target Goals */}
-                    <Box sx={{ mb: 2, textAlign: 'right' }}>
-                        <Typography variant="body2" fontWeight="bold">Target</Typography>
-                        <Typography variant="body2">&gt;{targetRanges.targetGoal}%</Typography>
-                        {targetRanges.highLimit && (
-                            <Typography variant="body2">&lt;{targetRanges.highLimit}%</Typography>
-                        )}
-                        {targetRanges.lowLimit && (
-                            <Typography variant="body2">&lt;{targetRanges.lowLimit}%</Typography>
-                        )}
-                    </Box>
 
                     {/* Stacked Bar Chart */}
                     <Box sx={{ position: 'relative', height: 300, border: 1, borderColor: 'grey.300' }}>
@@ -521,27 +510,22 @@ const PopulationAnalysis = () => {
                     <Box sx={{ mt: 1 }}>
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
                             <Typography variant="caption">&gt;{targetRanges.veryHighMin} mg/dL</Typography>
-                            <Typography variant="caption">({(targetRanges.veryHighMin/18).toFixed(1)} mmol/L)</Typography>
                         </Box>
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
                             <Typography variant="caption">&gt;{targetRanges.highMin} mg/dL</Typography>
-                            <Typography variant="caption">({(targetRanges.highMin/18).toFixed(1)} mmol/L)</Typography>
                         </Box>
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
                             <Typography variant="caption" fontWeight="bold">
                                 Target Range: {targetRanges.targetMin}-{targetRanges.targetMax} mg/dL
                             </Typography>
                             <Typography variant="caption">
-                                ({(targetRanges.targetMin/18).toFixed(1)}-{(targetRanges.targetMax/18).toFixed(1)} mmol/L)
                             </Typography>
                         </Box>
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
                             <Typography variant="caption">&lt;{targetRanges.lowMax} mg/dL</Typography>
-                            <Typography variant="caption">({(targetRanges.lowMax/18).toFixed(1)} mmol/L)</Typography>
                         </Box>
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <Typography variant="caption">&lt;{targetRanges.veryLowMax} mg/dL</Typography>
-                            <Typography variant="caption">({(targetRanges.veryLowMax/18).toFixed(1)} mmol/L)</Typography>
                         </Box>
                     </Box>
                 </CardContent>

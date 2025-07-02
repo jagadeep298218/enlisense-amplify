@@ -211,36 +211,7 @@ const PaidUserManagement = () => {
                         </Typography>
                     </Box>
                     <Box sx={{ display: 'flex', gap: 2 }} className="pdf-hide">
-                        <Button
-                            startIcon={<ArrowBackIcon />}
-                            onClick={() => navigate('/')}
-                            variant="outlined"
-                            sx={{ 
-                                borderColor: 'rgba(255,255,255,0.3)', 
-                                color: 'white',
-                                '&:hover': {
-                                    borderColor: 'rgba(255,255,255,0.5)',
-                                    bgcolor: 'rgba(255,255,255,0.1)'
-                                }
-                            }}
-                        >
-                            Back
-                        </Button>
-                        <Button
-                            startIcon={<RefreshIcon />}
-                            onClick={fetchUsers}
-                            variant="outlined"
-                            sx={{ 
-                                borderColor: 'rgba(255,255,255,0.3)', 
-                                color: 'white',
-                                '&:hover': {
-                                    borderColor: 'rgba(255,255,255,0.5)',
-                                    bgcolor: 'rgba(255,255,255,0.1)'
-                                }
-                            }}
-                        >
-                            Refresh
-                        </Button>
+
                     </Box>
                 </Box>
             </Paper>
@@ -312,6 +283,7 @@ const PaidUserManagement = () => {
                                             {user.admin && <Chip label="Admin" size="small" color="error" />}
                                             {user.doctor && <Chip label="Doctor" size="small" color="primary" />}
                                             {user.patient && <Chip label="Patient" size="small" color="info" />}
+                                            {!user.admin && !user.doctor && !user.patient && <Chip label="Patient" size="small" color="info" />}
                                         </Box>
                                     </TableCell>
                                     <TableCell>

@@ -247,28 +247,29 @@ function AGPComparison() {
     const layout = {
       title: {
         text: title,
-        font: { size: 16, family: "Arial" },
+        font: { size: 18, family: "Arial", weight: "bold" },
       },
-      xaxis: {
-        title: {
-          text: "Time of Day",
-          font: { size: 12 }
+              xaxis: {
+          title: {
+            text: "Time of Day",
+            font: { size: 14, weight: "bold" }
+          },
+          tickmode: "array",
+          tickvals: [0, 3, 6, 9, 12, 15, 18, 21],
+          ticktext: ["12 AM", "3 AM", "6 AM", "9 AM", "12 PM", "3 PM", "6 PM", "9 PM"],
+          tickfont: { size: 12 }
         },
-        tickmode: "array",
-        tickvals: [0, 3, 6, 9, 12, 15, 18, 21],
-        ticktext: ["12 AM", "3 AM", "6 AM", "9 AM", "12 PM", "3 PM", "6 PM", "9 PM"],
-        tickfont: { size: 10 }
-      },
-      yaxis: {
-        title: {
-          text: `${biomarkerType === 'glucose' ? 'Glucose' : 'Cortisol'} (${unit})`,
-          font: { size: 12 }
+        yaxis: {
+          title: {
+            text: `${biomarkerType === 'glucose' ? 'Glucose' : 'Cortisol'} (${unit})`,
+            font: { size: 14, weight: "bold" }
+          },
+          range: yAxisRange,
+          tickfont: { size: 12 }
         },
-        range: yAxisRange,
-        tickfont: { size: 10 }
-      },
-      margin: { l: 60, r: 40, t: 40, b: 60 },
-      height: 550,
+      margin: { l: 70, r: 50, t: 50, b: 70 },
+      height: 600,
+      width: 450,
       showlegend: false,
       plot_bgcolor: "white",
       paper_bgcolor: "white",
@@ -376,25 +377,26 @@ function AGPComparison() {
     const layout = {
       title: {
         text: title,
-        font: { size: 14, family: "Arial" },
+        font: { size: 16, family: "Arial", weight: "bold" },
       },
-      xaxis: {
-        title: {
-          text: `${biomarkerType === 'glucose' ? 'Glucose' : 'Cortisol'} Range (${chartConfig.unit})`,
-          font: { size: 11 }
+              xaxis: {
+          title: {
+            text: `${biomarkerType === 'glucose' ? 'Glucose' : 'Cortisol'} Range (${chartConfig.unit})`,
+            font: { size: 13, weight: "bold" }
+          },
+          tickfont: { size: 11 }
         },
-        tickfont: { size: 10 }
-      },
-      yaxis: {
-        title: {
-          text: "Percentage (%)",
-          font: { size: 11 }
+        yaxis: {
+          title: {
+            text: "Percentage (%)",
+            font: { size: 13, weight: "bold" }
+          },
+          range: [0, 100],
+          tickfont: { size: 11 }
         },
-        range: [0, 100],
-        tickfont: { size: 10 }
-      },
-      margin: { l: 60, r: 30, t: 60, b: 80 },
-      height: 350,
+      margin: { l: 70, r: 40, t: 70, b: 90 },
+      height: 400,
+      width: 450,
       showlegend: false,
       plot_bgcolor: "white",
       paper_bgcolor: "white",
@@ -472,13 +474,6 @@ function AGPComparison() {
           patient2: formatValue(stats2.average),
           difference: calculateDifference(stats1.average, stats2.average),
           diffColor: getDifferenceColor(stats1.average, stats2.average, false)
-        },
-        {
-          metric: 'Standard Deviation',
-          patient1: formatValue(stats1.standardDeviation),
-          patient2: formatValue(stats2.standardDeviation),
-          difference: calculateDifference(stats1.standardDeviation, stats2.standardDeviation),
-          diffColor: getDifferenceColor(stats1.standardDeviation, stats2.standardDeviation, true)
         },
         {
           metric: 'Time in Range (70-180)',
@@ -682,16 +677,16 @@ function AGPComparison() {
       </Paper>
 
       {/* AGP Charts Comparison */}
-      <Grid container spacing={3} sx={{ mb: 4 }}>
+      <Grid container spacing={4} sx={{ mb: 2 }}>
         <Grid item xs={12} xl={6}>
-          <Card sx={{ height: '100%', overflow: 'hidden' }}>
-            <CardContent sx={{ p: 3 }}>
+          <Card sx={{ height: '100%', overflow: 'hidden', boxShadow: 3 }}>
+            <CardContent sx={{ p: 4 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
                 <PersonIcon color="primary" />
                 <Typography variant="h6">{username1}</Typography>
                 <Chip label="Patient 1" size="small" color="primary" />
               </Box>
-              <Box sx={{ width: '100%', minHeight: 600, overflow: 'auto' }}>
+              <Box sx={{ width: '100%', minHeight: 300, overflow: 'auto' }}>
                 {createAGPChart(patient1, `${username1} - AGP`)}
               </Box>
             </CardContent>
@@ -699,14 +694,14 @@ function AGPComparison() {
         </Grid>
         
         <Grid item xs={12} xl={6}>
-          <Card sx={{ height: '100%', overflow: 'hidden' }}>
-            <CardContent sx={{ p: 3 }}>
+          <Card sx={{ height: '100%', overflow: 'hidden', boxShadow: 3 }}>
+            <CardContent sx={{ p: 4 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
                 <PersonIcon color="secondary" />
                 <Typography variant="h6">{username2}</Typography>
                 <Chip label="Patient 2" size="small" color="secondary" />
               </Box>
-              <Box sx={{ width: '100%', minHeight: 600, overflow: 'auto' }}>
+              <Box sx={{ width: '100%', minHeight: 650, overflow: 'auto' }}>
                 {createAGPChart(patient2, `${username2} - AGP`)}
               </Box>
             </CardContent>
@@ -715,16 +710,16 @@ function AGPComparison() {
       </Grid>
 
       {/* Time in Range Comparison */}
-      <Grid container spacing={3} sx={{ mb: 4 }}>
+      <Grid container spacing={4} sx={{ mb: 3 }}>
         <Grid item xs={12} xl={6}>
-          <Card sx={{ height: '100%' }}>
-            <CardContent sx={{ p: 3 }}>
+          <Card sx={{ height: '100%', boxShadow: 3 }}>
+            <CardContent sx={{ p: 4 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
                 <PersonIcon color="primary" />
                 <Typography variant="h6">{username1} - Time in Range</Typography>
                 <Chip label="Patient 1" size="small" color="primary" />
               </Box>
-              <Box sx={{ width: '100%', minHeight: 400 }}>
+              <Box sx={{ width: '100%', minHeight: 450 }}>
                 {createTimeInRangeChart(patient1, `${username1} - Time in Range`)}
               </Box>
             </CardContent>
@@ -732,14 +727,14 @@ function AGPComparison() {
         </Grid>
         
         <Grid item xs={12} xl={6}>
-          <Card sx={{ height: '100%' }}>
-            <CardContent sx={{ p: 3 }}>
+          <Card sx={{ height: '100%', boxShadow: 3 }}>
+            <CardContent sx={{ p: 4 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
                 <PersonIcon color="secondary" />
                 <Typography variant="h6">{username2} - Time in Range</Typography>
                 <Chip label="Patient 2" size="small" color="secondary" />
               </Box>
-              <Box sx={{ width: '100%', minHeight: 400 }}>
+              <Box sx={{ width: '100%', minHeight: 450 }}>
                 {createTimeInRangeChart(patient2, `${username2} - Time in Range`)}
               </Box>
             </CardContent>
@@ -748,15 +743,17 @@ function AGPComparison() {
       </Grid>
 
       {/* Statistics Comparison Table */}
-      <Paper sx={{ p: 3 }}>
-        <Typography variant="h6" gutterBottom>
+      <Paper sx={{ p: 4, boxShadow: 3 }}>
+        <Typography variant="h5" gutterBottom sx={{ fontWeight: 'bold', mb: 3 }}>
           Statistics Comparison
         </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
           Side-by-side comparison of key {biomarkerType === 'glucose' ? 'glucose' : 'cortisol'} metrics. 
           Green indicates improvement, red indicates deterioration compared to Patient 1.
         </Typography>
-        {createStatisticsComparison(patient1, patient2)}
+        <Box sx={{ mt: 3 }}>
+          {createStatisticsComparison(patient1, patient2)}
+        </Box>
       </Paper>
     </Container>
   );

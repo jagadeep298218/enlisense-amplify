@@ -20,7 +20,6 @@ import {
     Analytics as AnalyticsIcon,
     Settings as SettingsIcon,
     AccountBalance as AccountBalanceIcon,
-    MedicalServices as MedicalServicesIcon,
     Logout as LogoutIcon,
     ExpandLess,
     ExpandMore,
@@ -102,12 +101,6 @@ const Layout = ({ children }) => {
             roles: ['admin', 'doctor', 'patient']
         },
         {
-            text: 'Biomarker Config',
-            icon: <MedicalServicesIcon />,
-            path: '/admin/biomarker-config',
-            roles: ['admin']
-        },
-        {
             text: 'Paid Users',
             icon: <AccountBalanceIcon />,
             path: '/admin/paid-users',
@@ -144,7 +137,6 @@ const Layout = ({ children }) => {
     const isSettingsPathActive = () => {
         return settingsItems.some(item => 
             item.path === location.pathname || 
-            (item.path === '/admin/biomarker-config' && location.pathname === '/admin/biomarker-config') ||
             (item.path === '/admin/paid-users' && location.pathname === '/admin/paid-users') ||
             (item.path === '/settings' && location.pathname === '/settings') ||
             (item.path === '/settings/upload' && location.pathname === '/settings/upload')
